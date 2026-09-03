@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { apiUser } from '@/lib/rbac';
 import { transitionOrder } from '@/lib/escrow';
 import { uploadEvidence, type IncomingFile } from '@/lib/storage';
+import { responseDeadlineFrom } from '@/lib/complaint';
 
 // POST /api/complaints — konsumen melaporkan produk tidak sesuai.
 // Menerima multipart/form-data: orderId, reason, dan file "evidence" (bisa banyak).
@@ -47,8 +48,16 @@ export async function POST(req: Request) {
     }
   }
 
+  // Komplain masuk masa sanggah produsen lebih dulu (hak jawab), bukan langsung ke admin.
   const complaint = await prisma.complaint.create({
-    data: { orderId: order.id, reporterId: user.id, reason, evidenceUrls, status: 'BARU' },
+    data: {
+      orderId: order.id,
+      reporterId: user.id,
+      reason,
+      evidenceUrls,
+      status: 'MENUNGGU_SANGGAHAN',
+      responseDeadline: responseDeadlineFrom(),
+    },
   });
 
   // Order → SENGKETA (menahan auto-settle sampai admin memutuskan).

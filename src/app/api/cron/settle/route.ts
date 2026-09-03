@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { settleExpiredGracePeriods } from '@/lib/escrow';
+import { escalateExpiredResponses } from '@/lib/complaint';
 
 // GET /api/cron/settle — dipanggil terjadwal (mis. tiap 10 menit) untuk
 // menyelesaikan order yang grace period-nya lewat tanpa komplain.
@@ -13,5 +14,11 @@ export async function GET(req: Request) {
     }
   }
   const results = await settleExpiredGracePeriods();
-  return NextResponse.json({ settled: results.length, results });
+  // Komplain yang tenggat sanggah produsennya lewat → naik ke antrian admin.
+  const escalated = await escalateExpiredResponses();
+  return NextResponse.json({
+    settled: results.length,
+    escalated: escalated.length,
+    results,
+  });
 }

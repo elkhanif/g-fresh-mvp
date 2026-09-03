@@ -8,14 +8,21 @@ const NAV: Record<Role, { href: string; label: string }[]> = {
   PRODUSEN: [
     { href: '/app/produsen', label: 'Produk' },
     { href: '/app/produsen/pesanan', label: 'Pesanan masuk' },
+    { href: '/app/produsen/komplain', label: 'Komplain' },
   ],
   KONSUMEN: [
     { href: '/app/konsumen', label: 'Belanja' },
     { href: '/app/konsumen/pesanan', label: 'Pesanan saya' },
     { href: '/app/konsumen/scan', label: 'Scan QR' },
   ],
-  KURIR: [{ href: '/app/kurir', label: 'Tugas kurir' }],
-  ADMIN: [{ href: '/app/admin', label: 'Operasional' }],
+  KURIR: [
+    { href: '/app/kurir', label: 'Tugas kurir' },
+    { href: '/app/kurir/riwayat', label: 'Riwayat & pendapatan' },
+  ],
+  ADMIN: [
+    { href: '/app/admin', label: 'Operasional' },
+    { href: '/app/admin/riwayat', label: 'Riwayat' },
+  ],
   PEMKAB: [
     { href: '/app/pemkab', label: 'Dashboard Pemkab' },
     { href: '/app/pemkab/produsen', label: 'Direktori produsen' },

@@ -230,17 +230,10 @@ model OrderEvent {
 // ------------------------------------------------------------------
 
 enum ComplaintStatus {
-  MENUNGGU_SANGGAHAN // produsen diberi kesempatan menanggapi (SLA 12 jam)
-  DITINJAU           // dieskalasi ke admin (produsen menolak / tidak merespon)
-  VALID              // → refund ke konsumen
-  DITOLAK            // → dana diteruskan ke produsen
-}
-
-// Sikap produsen atas komplain konsumen (hak sanggah).
-enum ProducerStance {
-  BELUM_MERESPON
-  SETUJU // mengakui — refund diproses langsung tanpa admin
-  TOLAK  // menyanggah — dieskalasi ke admin dengan bukti tandingan
+  BARU
+  DITINJAU
+  VALID // → refund
+  DITOLAK
 }
 
 model Complaint {
@@ -250,16 +243,8 @@ model Complaint {
   reporterId   String
   reporter     User            @relation(fields: [reporterId], references: [id])
   reason       String
-  evidenceUrls String[] // foto/video bukti dari konsumen
-  status       ComplaintStatus @default(MENUNGGU_SANGGAHAN)
-  reviewNote   String? // catatan keputusan admin
-
-  // --- Hak sanggah produsen ---
-  producerStance     ProducerStance @default(BELUM_MERESPON)
-  producerResponse   String? // alasan/sanggahan produsen
-  producerEvidence   String[] // bukti tandingan dari produsen
-  producerRespondedAt DateTime?
-  responseDeadline   DateTime? // batas waktu sanggah; lewat = eskalasi otomatis
-
+  evidenceUrls String[] // foto/video bukti
+  status       ComplaintStatus @default(BARU)
+  reviewNote   String?
   createdAt    DateTime        @default(now())
 }

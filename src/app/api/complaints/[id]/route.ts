@@ -23,6 +23,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const complaint = await prisma.complaint.findUnique({ where: { id: params.id } });
   if (!complaint) return NextResponse.json({ error: 'Komplain tidak ada.' }, { status: 404 });
+  // Admin hanya memutuskan komplain yang sudah dieskalasi (produsen menolak
+  // atau tidak merespon). Komplain dalam masa sanggah belum boleh diputus.
+  if (complaint.status !== 'DITINJAU') {
+    return NextResponse.json(
+      { error: 'Komplain belum dieskalasi — produsen masih dalam masa sanggah.' },
+      { status: 409 },
+    );
+  }
 
   await prisma.complaint.update({
     where: { id: params.id },
