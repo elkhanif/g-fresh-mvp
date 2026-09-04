@@ -18,7 +18,12 @@ export async function GET() {
   if (user.role === 'KONSUMEN') where = { consumerId: user.id };
   else if (user.role === 'KURIR') {
     const courier = await prisma.courierProfile.findUnique({ where: { userId: user.id } });
-    where = { courierId: courier?.id };
+    // Jangan biarkan courierId jadi undefined masuk ke where — Prisma akan
+    // memperlakukan itu sebagai "tidak ada filter", yang berarti endpoint ini
+    // bisa balik mengembalikan SEMUA order di sistem ke akun kurir yang
+    // profilnya belum ada. Kembalikan kosong secara eksplisit sebagai gantinya.
+    if (!courier) return NextResponse.json([]);
+    where = { courierId: courier.id };
   }
   // ADMIN/PEMKAB melihat semua; PRODUSEN pakai endpoint lain (belum dibutuhkan MVP).
 

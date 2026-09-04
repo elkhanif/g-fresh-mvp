@@ -16,8 +16,22 @@ export default async function KurirRiwayat() {
   const user = await requireRole('KURIR');
   const courier = await prisma.courierProfile.findUnique({ where: { userId: user.id } });
 
+  // Sama seperti halaman kurir lainnya: tanpa guard ini, courier?.id yang
+  // undefined membuat Prisma mengabaikan filter dan berpotensi menampilkan
+  // riwayat pengiriman SEMUA kurir.
+  if (!courier) {
+    return (
+      <Card>
+        <p className="text-ink/60">
+          Profil kurir tidak ditemukan untuk akun ini. Coba keluar lalu masuk kembali —
+          bila masih terjadi, hubungi admin.
+        </p>
+      </Card>
+    );
+  }
+
   const orders = await prisma.order.findMany({
-    where: { courierId: courier?.id, status: { in: ['SELESAI', 'REFUND', 'SENGKETA'] } },
+    where: { courierId: courier.id, status: { in: ['SELESAI', 'REFUND', 'SENGKETA'] } },
     include: {
       items: { include: { product: { include: { producer: true } } } },
       consumer: { select: { name: true } },

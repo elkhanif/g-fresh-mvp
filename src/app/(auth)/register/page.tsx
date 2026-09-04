@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -7,16 +7,27 @@ import { Button } from '@/components/ui/Button';
 import { Input, Label, Select } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
 
-const KECAMATAN = ['Kebomas', 'Manyar', 'Cerme', 'Gresik', 'Duduksampeyan', 'Menganti'];
-
 export default function RegisterPage() {
   const router = useRouter();
+  const [kecamatanList, setKecamatanList] = useState<string[]>([]);
   const [form, setForm] = useState({
     name: '', email: '', phone: '', password: '',
-    role: 'KONSUMEN', kecamatan: 'Kebomas', farmName: '',
+    role: 'KONSUMEN', kecamatan: '', farmName: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Daftar kecamatan diambil dari Admin (dikelola di dashboard Admin), bukan
+  // hardcoded, supaya cakupan pilot bisa diperluas tanpa mengubah kode.
+  useEffect(() => {
+    fetch('/api/service-areas')
+      .then((r) => r.json())
+      .then((list: string[]) => {
+        setKecamatanList(list);
+        if (list.length > 0) setForm((f) => ({ ...f, kecamatan: list[0] }));
+      })
+      .catch(() => {});
+  }, []);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -77,17 +88,26 @@ export default function RegisterPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Kecamatan</Label>
-              <Select value={form.kecamatan} onChange={(e) => set('kecamatan', e.target.value)}>
-                {KECAMATAN.map((k) => <option key={k}>{k}</option>)}
-              </Select>
+              {kecamatanList.length === 0 ? (
+                <Input value="Memuat…" disabled />
+              ) : (
+                <Select value={form.kecamatan} onChange={(e) => set('kecamatan', e.target.value)}>
+                  {kecamatanList.map((k) => <option key={k}>{k}</option>)}
+                </Select>
+              )}
             </div>
             <div>
               <Label>Kata sandi</Label>
               <Input type="password" value={form.password} onChange={(e) => set('password', e.target.value)} required minLength={6} />
             </div>
           </div>
+          {kecamatanList.length > 0 && (
+            <p className="text-xs text-ink/45">
+              Belum melayani kecamatan Anda? Layanan akan diperluas bertahap oleh operator.
+            </p>
+          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
-          <Button type="submit" disabled={loading} className="w-full">
+          <Button type="submit" disabled={loading || kecamatanList.length === 0} className="w-full">
             {loading ? 'Memproses…' : 'Daftar & masuk'}
           </Button>
         </form>

@@ -4,10 +4,12 @@ import { rupiah } from '@/lib/utils';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
-import { CourierVerifyButton, ComplaintDecision } from '@/components/forms/AdminActions';
+import { CourierVerifyButton, ComplaintDecision, KtpReviewCard } from '@/components/forms/AdminActions';
+import { ServiceAreaPanel } from '@/components/forms/ServiceAreaPanel';
 import { BusinessVerifyButton } from '@/components/forms/BusinessVerifyButton';
 import { InvoicePayButton } from '@/components/forms/InvoicePayButton';
 import { riskLabel, FLAG_LABEL } from '@/lib/fraud';
+import { CATEGORY_LABEL } from '@/lib/negotiation';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -59,7 +61,7 @@ export default async function AdminDashboard() {
   const [
     produsenCount, konsumenCount, kurirCount, kurirVerified, kurirAktif,
     orderCount, orderHariIni, activeOrders, gmvAgg,
-    escalated, menungguSanggahan, couriers, businesses, openInvoices, feeAgg,
+    escalated, menungguSanggahan, couriers, businesses, openInvoices, feeAgg, serviceAreas,
   ] = await Promise.all([
     prisma.producerProfile.count(),
     prisma.user.count({ where: { role: 'KONSUMEN' } }),
@@ -79,6 +81,7 @@ export default async function AdminDashboard() {
             consumer: { select: { name: true } },
           },
         },
+        offers: { orderBy: { round: 'asc' } },
       },
       orderBy: { createdAt: 'asc' },
     }),
@@ -101,6 +104,7 @@ export default async function AdminDashboard() {
       _sum: { platformFee: true },
       where: { channel: 'B2B', status: { in: ['SELESAI', 'DITERIMA', 'DIKIRIM', 'DIJEMPUT_KURIR', 'DIBAYAR'] } },
     }),
+    prisma.serviceArea.findMany({ orderBy: { name: 'asc' } }),
   ]);
 
   return (
@@ -111,6 +115,11 @@ export default async function AdminDashboard() {
           Lihat riwayat lengkap →
         </Link>
       </div>
+
+      <section>
+        <h2 className="mb-3 text-lg font-semibold">Wilayah layanan</h2>
+        <Card><ServiceAreaPanel areas={serviceAreas} /></Card>
+      </section>
 
       <section>
         <h2 className="mb-3 text-lg font-semibold">Pengguna terdaftar</h2>
@@ -176,6 +185,12 @@ export default async function AdminDashboard() {
                   ))}
                 </div>
 
+                <p className="mt-2 text-xs text-ink/50">
+                  {CATEGORY_LABEL[c.category]}
+                  {c.qtyAffected != null && ` · dilaporkan kurang ${c.qtyAffected}`}
+                  {c.suggestedRefund != null && ` · saran sistem ${rupiah(c.suggestedRefund)}`}
+                </p>
+
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <div className="rounded-lg bg-leaf-50 p-3">
                     <p className="text-xs font-semibold text-ink/70">KLAIM KONSUMEN</p>
@@ -190,6 +205,23 @@ export default async function AdminDashboard() {
                     <Bukti urls={c.producerEvidence} label="Bukti produsen" />
                   </div>
                 </div>
+
+                {c.offers.length > 0 && (
+                  <div className="mt-3 rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs font-semibold text-ink/70">RIWAYAT NEGOSIASI ({c.offers.length} putaran)</p>
+                    <ol className="mt-1 space-y-0.5 text-xs text-ink/60">
+                      {c.offers.map((o) => (
+                        <li key={o.id}>
+                          Putaran {o.round}: produsen menawar {rupiah(o.amount)} —{' '}
+                          <span className={o.status === 'DITOLAK' ? 'text-red-600' : 'text-ink/60'}>
+                            {o.status === 'MENUNGGU' ? 'belum direspons' : o.status === 'DITERIMA' ? 'diterima' : 'ditolak konsumen'}
+                          </span>
+                          {o.note ? ` · "${o.note}"` : ''}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
 
                 <div className="mt-3">
                   <ComplaintDecision complaintId={c.id} orderTotal={c.order.total} />
@@ -259,10 +291,10 @@ export default async function AdminDashboard() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Kurir</h2>
+        <h2 className="mb-3 text-lg font-semibold">Kurir — verifikasi KTP</h2>
         <div className="space-y-3">
           {couriers.map((c) => (
-            <Card key={c.id} className="flex flex-wrap items-center justify-between gap-3">
+            <Card key={c.id} className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="font-medium">{c.user.name}</p>
                 <p className="flex flex-wrap items-center gap-2 text-sm text-ink/60">
@@ -271,7 +303,12 @@ export default async function AdminDashboard() {
                   {c.active ? <Badge tone="neutral">aktif</Badge> : <Badge tone="neutral">nonaktif</Badge>}
                 </p>
               </div>
-              <CourierVerifyButton courierId={c.id} verified={c.ktpVerified} />
+              <KtpReviewCard
+                courierId={c.id}
+                ktpNumber={c.ktpNumber}
+                ktpPhotoUrl={c.ktpPhotoUrl}
+                ktpVerified={c.ktpVerified}
+              />
             </Card>
           ))}
         </div>

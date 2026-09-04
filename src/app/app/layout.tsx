@@ -20,6 +20,7 @@ const NAV: Record<Role, { href: string; label: string }[]> = {
   KURIR: [
     { href: '/app/kurir', label: 'Tugas kurir' },
     { href: '/app/kurir/riwayat', label: 'Riwayat & pendapatan' },
+    { href: '/app/kurir/verifikasi', label: 'Verifikasi KTP' },
   ],
   ADMIN: [
     { href: '/app/admin', label: 'Operasional' },

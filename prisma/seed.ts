@@ -105,6 +105,24 @@ async function main() {
   await prisma.hetPrice.deleteMany({}); // HetPrice.setBy → User tanpa cascade, harus lebih dulu
   await prisma.user.deleteMany({});     // cascade ke ProducerProfile/CourierProfile/BusinessProfile/Notification
 
+  // ---------------------------------------------------------------- Wilayah layanan
+  // 18 kecamatan resmi Kabupaten Gresik. Aktif = kecamatan yang sudah dilayani
+  // pada fase pilot (dipakai produsen/kurir demo di bawah); sisanya nonaktif
+  // sebagai contoh perluasan cakupan yang bisa dilakukan Admin tanpa deploy ulang.
+  const SEMUA_KECAMATAN = [
+    'Balongpanggang', 'Benjeng', 'Bungah', 'Cerme', 'Driyorejo', 'Duduksampeyan',
+    'Dukun', 'Gresik', 'Kebomas', 'Kedamean', 'Manyar', 'Menganti',
+    'Panceng', 'Sangkapura', 'Sidayu', 'Tambak', 'Ujungpangkah', 'Wringinanom',
+  ];
+  const KECAMATAN_PILOT = new Set([
+    'Cerme', 'Manyar', 'Duduksampeyan', 'Menganti', 'Kebomas', 'Gresik', 'Balongpanggang', 'Wringinanom',
+  ]);
+  await prisma.serviceArea.deleteMany({});
+  await prisma.serviceArea.createMany({
+    data: SEMUA_KECAMATAN.map((name) => ({ name, active: KECAMATAN_PILOT.has(name) })),
+  });
+  console.log(`› ${SEMUA_KECAMATAN.length} kecamatan dimuat (${KECAMATAN_PILOT.size} aktif untuk pilot)`);
+
   // ---------------------------------------------------------------- Kategori
   const KATEGORI = [
     { name: 'Sayur', unit: 'ikat' },
@@ -285,29 +303,44 @@ async function main() {
   console.log(`› ${PRODUSEN.length} produsen & ${totalProduk} produk siap`);
 
   // ---------------------------------------------------------------- Kurir
+  // ktpState: 'verified' = sudah disetujui admin (ada NIK + foto).
+  //           'pending'  = sudah mengajukan, menunggu admin meninjau.
+  //           'none'     = belum mengajukan KTP sama sekali.
   const KURIR = [
-    { email: 'kurir.budi@gfresh.id', name: 'Budi Santoso', kec: 'Kebomas', vehicle: 'Motor + cool-box 40L', verified: true, active: true },
-    { email: 'kurir.eko@gfresh.id', name: 'Eko Prasetyo', kec: 'Manyar', vehicle: 'Motor + cool-box 30L', verified: true, active: true },
-    { email: 'kurir.sari@gfresh.id', name: 'Sari Wulandari', kec: 'Cerme', vehicle: 'Motor + box thermal', verified: true, active: true },
-    { email: 'kurir.agus@gfresh.id', name: 'Agus Riyanto', kec: 'Gresik', vehicle: 'Motor viar + cool-box 80L', verified: true, active: false },
-    { email: 'kurir.dani@gfresh.id', name: 'Dani Kurniawan', kec: 'Menganti', vehicle: 'Motor + cool-box 30L', verified: false, active: true },
+    { email: 'kurir.budi@gfresh.id', name: 'Budi Santoso', kec: 'Kebomas', vehicle: 'Motor + cool-box 40L', ktpState: 'verified', active: true },
+    { email: 'kurir.eko@gfresh.id', name: 'Eko Prasetyo', kec: 'Manyar', vehicle: 'Motor + cool-box 30L', ktpState: 'verified', active: true },
+    { email: 'kurir.sari@gfresh.id', name: 'Sari Wulandari', kec: 'Cerme', vehicle: 'Motor + box thermal', ktpState: 'verified', active: true },
+    { email: 'kurir.agus@gfresh.id', name: 'Agus Riyanto', kec: 'Gresik', vehicle: 'Motor viar + cool-box 80L', ktpState: 'verified', active: false },
+    { email: 'kurir.dani@gfresh.id', name: 'Dani Kurniawan', kec: 'Menganti', vehicle: 'Motor + cool-box 30L', ktpState: 'pending', active: true },
   ];
   const kurirRefs: { courierId: string; userId: string; name: string }[] = [];
+  let nikSeq = 3524011234560001; // NIK dummy berurutan, jelas bukan data asli
   for (const K of KURIR) {
+    const verified = K.ktpState === 'verified';
+    const pending = K.ktpState === 'pending';
     const u = await prisma.user.upsert({
       where: { email: K.email },
       update: {},
       create: {
         name: K.name, email: K.email, phone: '0814' + Math.floor(1000000 + Math.random() * 8999999),
         passwordHash: pass, role: 'KURIR', kecamatan: K.kec,
-        courier: { create: { kecamatan: K.kec, vehicle: K.vehicle, ktpVerified: K.verified, active: K.active } },
+        courier: {
+          create: {
+            kecamatan: K.kec, vehicle: K.vehicle, active: K.active,
+            ktpVerified: verified,
+            ktpNumber: verified || pending ? String(nikSeq++) : null,
+            // Placeholder — pada data asli ini akan berupa foto hasil unggahan kurir.
+            ktpPhotoUrl: verified || pending ? '/placeholder-ktp.png' : null,
+            ktpSubmittedAt: verified || pending ? hoursAgo(verified ? 72 : 3) : null,
+          },
+        },
       },
       include: { courier: true },
     });
     const c = u.courier ?? (await prisma.courierProfile.findUniqueOrThrow({ where: { userId: u.id } }));
     kurirRefs.push({ courierId: c.id, userId: u.id, name: K.name });
   }
-  console.log(`› ${KURIR.length} kurir siap (4 terverifikasi, 1 belum)`);
+  console.log(`› ${KURIR.length} kurir siap (4 terverifikasi, 1 menunggu tinjauan KTP)`);
 
   // ---------------------------------------------------------------- Konsumen
   const KONSUMEN = [

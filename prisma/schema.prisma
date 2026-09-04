@@ -78,11 +78,31 @@ model CourierProfile {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   kecamatan   String
   vehicle     String? // "Motor + cool-box"
-  ktpVerified Boolean  @default(false)
+
+  // --- Verifikasi KTP (KYC) ---
+  ktpNumber        String?   // NIK 16 digit, diajukan kurir sendiri
+  ktpPhotoUrl      String?   // foto KTP yang diunggah kurir
+  ktpSubmittedAt   DateTime? // kapan pengajuan/pengajuan-ulang terakhir dikirim
+  ktpVerified      Boolean   @default(false)
+  ktpRejectedReason String?  // diisi admin bila menolak; kurir bisa ajukan ulang
+
   active      Boolean  @default(true)
   ratingScore Float    @default(5)
   orders      Order[]  @relation("CourierOrders")
   createdAt   DateTime @default(now())
+}
+
+// ------------------------------------------------------------------
+// Wilayah layanan (kecamatan pilot) — dikelola Admin, bukan hardcoded.
+// Menentukan pilihan kecamatan yang muncul saat pendaftaran. Pilot dimulai
+// dari sebagian kecamatan; Admin bisa memperluas cakupan tanpa deploy ulang.
+// ------------------------------------------------------------------
+
+model ServiceArea {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
 }
 
 // ------------------------------------------------------------------
@@ -307,17 +327,35 @@ model OrderEvent {
 // ------------------------------------------------------------------
 
 enum ComplaintStatus {
-  MENUNGGU_SANGGAHAN // produsen diberi kesempatan menanggapi (SLA 12 jam)
-  DITINJAU           // dieskalasi ke admin (produsen menolak / tidak merespon)
-  VALID              // → refund ke konsumen
-  DITOLAK            // → dana diteruskan ke produsen
+  MENUNGGU_SANGGAHAN   // produsen belum/harus merespon (awal, atau setelah tawaran ditolak)
+  MENUNGGU_PERSETUJUAN // ada tawaran refund sebagian aktif, menunggu keputusan konsumen
+  DITINJAU             // dieskalasi ke admin — keputusan admin bersifat final/mengikat
+  VALID                // → refund (penuh atau sebagian) ke konsumen
+  DITOLAK              // → dana diteruskan ke produsen
 }
 
 // Sikap produsen atas komplain konsumen (hak sanggah).
 enum ProducerStance {
   BELUM_MERESPON
-  SETUJU // mengakui — refund diproses langsung tanpa admin
+  SETUJU // mengakui penuh — refund 100% diproses langsung tanpa admin
+  TAWAR  // mengakui sebagian — mengajukan nominal refund, menunggu persetujuan konsumen
   TOLAK  // menyanggah — dieskalasi ke admin dengan bukti tandingan
+}
+
+// Kategori keluhan terstruktur. Dipakai untuk saran nominal refund otomatis
+// (KURANG_TIMBANGAN) dan supaya alasan komplain tidak melulu teks bebas.
+enum ComplaintCategory {
+  KURANG_TIMBANGAN // jumlah/berat yang diterima kurang dari yang dipesan
+  RUSAK            // rusak/hancur dalam perjalanan
+  TIDAK_SEGAR      // kualitas/kesegaran tidak sesuai
+  SALAH_PRODUK     // barang tidak sesuai yang dipesan
+  LAINNYA
+}
+
+enum OfferStatus {
+  MENUNGGU
+  DITERIMA
+  DITOLAK
 }
 
 model Complaint {
@@ -326,22 +364,47 @@ model Complaint {
   order        Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   reporterId   String
   reporter     User            @relation(fields: [reporterId], references: [id])
+  category     ComplaintCategory @default(LAINNYA)
+  qtyAffected  Float?          // jumlah unit yang bermasalah (skala sama dengan unit produk)
   reason       String
   evidenceUrls String[] // foto/video bukti dari konsumen
   status       ComplaintStatus @default(MENUNGGU_SANGGAHAN)
   reviewNote   String? // catatan keputusan admin
 
-  // --- Hak sanggah produsen ---
+  // Saran nominal refund otomatis (KURANG_TIMBANGAN): proporsional terhadap
+  // qtyAffected / qty item. Murni starting point, tidak mengikat siapa pun.
+  suggestedRefund Int?
+
+  // --- Hak sanggah & negosiasi produsen ---
   producerStance     ProducerStance @default(BELUM_MERESPON)
   producerResponse   String? // alasan/sanggahan produsen
   producerEvidence   String[] // bukti tandingan dari produsen
   producerRespondedAt DateTime?
-  responseDeadline   DateTime? // batas waktu sanggah produsen; lewat = eskalasi ke admin
+  responseDeadline   DateTime? // batas waktu produsen merespon; lewat = eskalasi ke admin
   adminDeadline      DateTime? // batas waktu admin memutus; lewat = auto-refund ke konsumen
+  round              Int      @default(0) // jumlah putaran tawaran yang sudah terjadi
+  offers             ComplaintOffer[]
 
   // --- #7 Penilaian risiko penyalahgunaan klaim (dihitung saat komplain dibuat) ---
   riskScore    Int      @default(0) // 0-100; makin tinggi makin patut dicurigai
   riskFlags    String[] // penanda pola: RASIO_TINGGI, MENIT_AKHIR, KLAIM_BERULANG, dst
 
   createdAt    DateTime        @default(now())
+}
+
+// Satu putaran tawaran refund sebagian dari produsen ke konsumen.
+// Riwayat lengkap disimpan (bukan ditimpa) agar admin punya jejak negosiasi
+// yang jelas ketika kasus akhirnya dieskalasi.
+model ComplaintOffer {
+  id          String      @id @default(cuid())
+  complaintId String
+  complaint   Complaint   @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  round       Int         // ke berapa tawaran ini dalam siklus negosiasi (1, 2, 3, …)
+  amount      Int         // nominal refund yang ditawarkan produsen
+  note        String?
+  status      OfferStatus @default(MENUNGGU)
+  createdAt   DateTime    @default(now())
+  respondedAt DateTime?
+
+  @@index([complaintId])
 }

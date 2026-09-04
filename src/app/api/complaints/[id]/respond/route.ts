@@ -4,12 +4,15 @@ import { apiUser } from '@/lib/rbac';
 import { transitionOrder } from '@/lib/escrow';
 import { canProducerRespond, adminDeadlineFrom } from '@/lib/complaint';
 import { uploadEvidence, type IncomingFile } from '@/lib/storage';
+import { notify } from '@/lib/notification';
 
-// POST /api/complaints/[id]/respond — hak sanggah produsen.
-// multipart/form-data: stance = SETUJU | TOLAK, response (teks), evidence (file, opsional)
+// POST /api/complaints/[id]/respond — hak sanggah & tawar produsen.
+// multipart/form-data: stance = SETUJU | TAWAR | TOLAK, response (teks),
+// amount (wajib untuk TAWAR), evidence (file, opsional)
 //
-//   SETUJU → refund diproses LANGSUNG, tanpa menunggu admin.
-//   TOLAK  → dieskalasi ke admin beserta sanggahan & bukti tandingan.
+//   SETUJU → refund PENUH diproses LANGSUNG, tanpa menunggu admin.
+//   TAWAR  → mengajukan nominal refund sebagian, menunggu keputusan konsumen.
+//   TOLAK  → dieskalasi ke admin beserta sanggahan & bukti tandingan (final, mengikat).
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const user = await apiUser();
   if (!user || user.role !== 'PRODUSEN') {
@@ -24,8 +27,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const stance = String(form.get('stance') || '');
   const response = String(form.get('response') || '').trim();
-  if (stance !== 'SETUJU' && stance !== 'TOLAK') {
-    return NextResponse.json({ error: 'Pilih SETUJU atau TOLAK.' }, { status: 400 });
+  const amountRaw = form.get('amount');
+  const amount = amountRaw ? Number(amountRaw) : null;
+
+  if (!['SETUJU', 'TAWAR', 'TOLAK'].includes(stance)) {
+    return NextResponse.json({ error: 'Pilih SETUJU, TAWAR, atau TOLAK.' }, { status: 400 });
   }
   if (stance === 'TOLAK' && response.length < 10) {
     return NextResponse.json(
@@ -33,8 +39,17 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       { status: 400 },
     );
   }
+  if (stance === 'TAWAR') {
+    const order = await prisma.order.findUnique({ where: { id: guard.complaint.orderId } });
+    if (!amount || amount < 1 || amount >= (order?.total ?? 0)) {
+      return NextResponse.json(
+        { error: `Nominal tawaran harus antara 1 dan ${(order?.total ?? 1) - 1}.` },
+        { status: 400 },
+      );
+    }
+  }
 
-  // Bukti tandingan (opsional, hanya relevan saat menyanggah).
+  // Bukti tandingan (opsional, relevan untuk TAWAR maupun TOLAK).
   let producerEvidence: string[] = [];
   const files = form.getAll('evidence').filter((x): x is File => x instanceof File && x.size > 0);
   if (files.length > 0) {
@@ -49,27 +64,63 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
   }
 
+  // ---- SETUJU: selesai langsung, refund penuh ----
   if (stance === 'SETUJU') {
-    // Produsen mengakui → selesaikan sekarang, konsumen tidak perlu menunggu admin.
     await prisma.complaint.update({
       where: { id: params.id },
       data: {
         producerStance: 'SETUJU',
-        producerResponse: response || 'Produsen menyetujui komplain.',
+        producerResponse: response || 'Produsen menyetujui komplain sepenuhnya.',
         producerEvidence,
         producerRespondedAt: new Date(),
         status: 'VALID',
-        reviewNote: 'Diselesaikan tanpa admin: produsen menyetujui komplain.',
+        reviewNote: 'Diselesaikan tanpa admin: produsen menyetujui penuh.',
       },
     });
     const order = await transitionOrder(guard.complaint.orderId, 'REFUND', {
       actorId: user.id,
-      note: 'Produsen menyetujui komplain — dana dikembalikan ke konsumen.',
+      note: 'Produsen menyetujui komplain — dana dikembalikan penuh ke konsumen.',
     });
     return NextResponse.json({ stance, resolved: true, order });
   }
 
-  // TOLAK → naik ke meja admin.
+  // ---- TAWAR: ajukan nominal, menunggu keputusan konsumen ----
+  if (stance === 'TAWAR') {
+    const nextRound = guard.complaint.round + 1;
+    const [complaint] = await prisma.$transaction([
+      prisma.complaint.update({
+        where: { id: params.id },
+        data: {
+          producerStance: 'TAWAR',
+          producerResponse: response || null,
+          producerEvidence,
+          producerRespondedAt: new Date(),
+          status: 'MENUNGGU_PERSETUJUAN',
+          round: nextRound,
+        },
+      }),
+      prisma.complaintOffer.create({
+        data: {
+          complaintId: params.id,
+          round: nextRound,
+          amount: amount as number,
+          note: response || null,
+        },
+      }),
+    ]);
+
+    await notify({
+      userId: guard.complaint.reporterId,
+      kind: 'KOMPLAIN',
+      title: 'Produsen mengajukan tawaran refund',
+      body: `Produsen menawarkan pengembalian sebagian. Silakan tinjau dan tanggapi.`,
+      href: `/app/konsumen/pesanan/${guard.complaint.orderId}`,
+    });
+
+    return NextResponse.json({ stance, resolved: false, complaint });
+  }
+
+  // ---- TOLAK: naik ke meja admin (final, mengikat) ----
   const updated = await prisma.complaint.update({
     where: { id: params.id },
     data: {

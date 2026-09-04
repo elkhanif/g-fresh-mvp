@@ -4,6 +4,7 @@ import { apiUser } from '@/lib/rbac';
 import { transitionOrder } from '@/lib/escrow';
 import { uploadEvidence, type IncomingFile } from '@/lib/storage';
 import { responseDeadlineFrom, producerIdOfOrder } from '@/lib/complaint';
+import { suggestedRefundFor, CATEGORIES } from '@/lib/negotiation';
 import { assessClaim } from '@/lib/fraud';
 import { notify, userIdOfProducer } from '@/lib/notification';
 
@@ -21,11 +22,19 @@ export async function POST(req: Request) {
 
   const orderId = String(form.get('orderId') || '');
   const reason = String(form.get('reason') || '').trim();
+  const categoryRaw = String(form.get('category') || 'LAINNYA');
+  const category = (CATEGORIES as string[]).includes(categoryRaw) ? categoryRaw : 'LAINNYA';
+  const qtyRaw = form.get('qtyAffected');
+  const qtyAffected = qtyRaw ? Number(qtyRaw) : null;
+
   if (!orderId || reason.length < 5) {
     return NextResponse.json({ error: 'Alasan komplain minimal 5 karakter.' }, { status: 400 });
   }
 
-  const order = await prisma.order.findUnique({ where: { id: orderId } });
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { items: true },
+  });
   if (!order) return NextResponse.json({ error: 'Order tidak ada.' }, { status: 404 });
   if (order.consumerId !== user.id) return NextResponse.json({ error: 'Bukan order Anda.' }, { status: 403 });
   if (order.status !== 'DITERIMA') {
@@ -60,15 +69,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: assessment.reason }, { status: 429 });
   }
 
+  // Saran refund otomatis: hanya bermakna untuk order satu-item (kasus umum
+  // di aplikasi ini) dan kategori KURANG_TIMBANGAN. Murni starting point.
+  const suggestedRefund =
+    order.items.length === 1
+      ? suggestedRefundFor(category, qtyAffected, order.items[0])
+      : null;
+
   // Komplain masuk masa sanggah produsen lebih dulu (hak jawab), bukan langsung ke admin.
   const complaint = await prisma.complaint.create({
     data: {
       orderId: order.id,
       reporterId: user.id,
+      category: category as never,
+      qtyAffected,
       reason,
       evidenceUrls,
       status: 'MENUNGGU_SANGGAHAN',
       responseDeadline: responseDeadlineFrom(),
+      suggestedRefund,
       riskScore: assessment.riskScore,
       riskFlags: assessment.flags,
     },

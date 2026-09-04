@@ -24,6 +24,21 @@ export default async function KurirDashboard() {
   const user = await requireRole('KURIR');
   const courier = await prisma.courierProfile.findUnique({ where: { userId: user.id } });
 
+  // Wajib berhenti di sini bila profil tidak ada — TANPA guard ini,
+  // courier?.id di bawah akan bernilai undefined, dan Prisma memperlakukan
+  // filter undefined sebagai "abaikan filter ini". Akibatnya query "tugas
+  // saya" dan statistik pendapatan bisa balik menampilkan data SEMUA kurir.
+  if (!courier) {
+    return (
+      <Card>
+        <p className="text-ink/60">
+          Profil kurir tidak ditemukan untuk akun ini. Coba keluar lalu masuk kembali —
+          bila masih terjadi, hubungi admin.
+        </p>
+      </Card>
+    );
+  }
+
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
@@ -36,32 +51,32 @@ export default async function KurirDashboard() {
         take: 30,
       }),
       prisma.order.findMany({
-        where: { courierId: courier?.id, status: { in: ['DIJEMPUT_KURIR', 'DIKIRIM'] } },
+        where: { courierId: courier.id, status: { in: ['DIJEMPUT_KURIR', 'DIKIRIM'] } },
         include: { items: { include: { product: { include: { producer: true } } } } },
         orderBy: { createdAt: 'asc' },
       }),
-      prisma.order.count({ where: { courierId: courier?.id, status: 'SELESAI' } }),
+      prisma.order.count({ where: { courierId: courier.id, status: 'SELESAI' } }),
       prisma.order.count({
-        where: { courierId: courier?.id, status: 'SELESAI', updatedAt: { gte: startOfDay } },
+        where: { courierId: courier.id, status: 'SELESAI', updatedAt: { gte: startOfDay } },
       }),
       prisma.order.aggregate({
         _sum: { deliveryFee: true },
-        where: { courierId: courier?.id, status: 'SELESAI' },
+        where: { courierId: courier.id, status: 'SELESAI' },
       }),
       prisma.order.aggregate({
         _sum: { deliveryFee: true },
-        where: { courierId: courier?.id, status: 'SELESAI', updatedAt: { gte: startOfDay } },
+        where: { courierId: courier.id, status: 'SELESAI', updatedAt: { gte: startOfDay } },
       }),
     ]);
 
-  const aktif = courier?.active ?? false;
+  const aktif = courier.active;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Beranda kurir</h1>
-          <p className="text-sm text-ink/60">Kec. {courier?.kecamatan} · {courier?.vehicle ?? 'kendaraan belum diisi'}</p>
+          <p className="text-sm text-ink/60">Kec. {courier.kecamatan} · {courier.vehicle ?? 'kendaraan belum diisi'}</p>
         </div>
         <div className="flex items-center gap-2">
           {courier && <PerfBadge rating={courier.ratingScore} />}
@@ -69,11 +84,18 @@ export default async function KurirDashboard() {
         </div>
       </div>
 
-      {!courier?.ktpVerified && (
+      {!courier.ktpVerified && (
         <Card className="border-amber-200 bg-amber-50">
           <p className="text-sm text-amber-800">
-            KTP Anda belum diverifikasi admin, sehingga Anda belum bisa mengambil tugas.
-            Hubungi operator G-Fresh untuk proses verifikasi.
+            {courier.ktpRejectedReason
+              ? `Pengajuan KTP Anda ditolak: ${courier.ktpRejectedReason}`
+              : courier.ktpSubmittedAt
+                ? 'KTP Anda sedang ditinjau admin — belum bisa mengambil tugas.'
+                : 'Anda belum bisa mengambil tugas sebelum verifikasi KTP.'}
+            {' '}
+            <Link href="/app/kurir/verifikasi" className="font-medium underline">
+              {courier.ktpSubmittedAt && !courier.ktpRejectedReason ? 'Lihat status' : 'Verifikasi sekarang'}
+            </Link>
           </p>
         </Card>
       )}
@@ -154,7 +176,7 @@ export default async function KurirDashboard() {
                   </p>
                   <p className="text-sm text-ink/60">Antar: {o.addressText}</p>
                 </div>
-                {aktif && courier?.ktpVerified && <KurirAccept orderId={o.id} />}
+                {aktif && courier.ktpVerified && <KurirAccept orderId={o.id} />}
               </Card>
             );
           })}

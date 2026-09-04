@@ -19,11 +19,35 @@ export default async function OrderDetail({ params }: { params: { id: string } }
     include: {
       items: { include: { product: true } },
       courier: { include: { user: { select: { name: true, phone: true } } } },
-      complaint: true,
+      complaint: {
+        include: {
+          offers: { where: { status: 'MENUNGGU' }, orderBy: { round: 'desc' }, take: 1 },
+        },
+      },
       events: { orderBy: { createdAt: 'asc' } },
     },
   });
   if (!o || o.consumerId !== user.id) notFound();
+
+  const complaintInfo = o.complaint
+    ? {
+        id: o.complaint.id,
+        status: o.complaint.status,
+        reason: o.complaint.reason,
+        suggestedRefund: o.complaint.suggestedRefund,
+        round: o.complaint.round,
+        producerResponse: o.complaint.producerResponse,
+        reviewNote: o.complaint.reviewNote,
+        activeOffer: o.complaint.offers[0]
+          ? {
+              id: o.complaint.offers[0].id,
+              amount: o.complaint.offers[0].amount,
+              note: o.complaint.offers[0].note,
+              round: o.complaint.offers[0].round,
+            }
+          : null,
+      }
+    : null;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr,320px]">
@@ -74,12 +98,13 @@ export default async function OrderDetail({ params }: { params: { id: string } }
       <aside>
         <Card>
           <h2 className="mb-3 font-semibold">Tindakan</h2>
-          <OrderActions orderId={o.id} status={o.status} />
-          {o.complaint && (
-            <p className="mt-3 rounded-lg bg-amber-50 p-2 text-xs text-amber-800">
-              Komplain: {o.complaint.status}
-            </p>
-          )}
+          <OrderActions
+            orderId={o.id}
+            status={o.status}
+            complaint={complaintInfo}
+            itemQty={o.items.length === 1 ? o.items[0].qty : undefined}
+            itemUnit={o.items.length === 1 ? o.items[0].product.unit : undefined}
+          />
         </Card>
       </aside>
     </div>
