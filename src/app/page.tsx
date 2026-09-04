@@ -100,7 +100,7 @@ export default async function Landing() {
       )}
 
       <footer className="border-t border-leaf-100 py-8 text-sm text-ink/50">
-        G-Fresh · Prototipe MVP untuk Gresik Inovasi 2026. Kemitraan operator swasta ×
+        G-Fresh · Prototipe MVP untuk Gresik Inovasi Kompetisi 2026. Kemitraan operator swasta ×
         Pemerintah Kabupaten Gresik.
       </footer>
     </main>

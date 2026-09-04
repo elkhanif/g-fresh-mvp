@@ -34,18 +34,20 @@ export async function createEscrowCharge(input: ChargeInput): Promise<ChargeResu
   };
 }
 
-export async function releaseFunds(paymentRef: string): Promise<void> {
+export async function releaseFunds(paymentRef: string, amount?: number): Promise<void> {
   if (provider === 'midtrans') {
     // TODO(midtrans): capture / approve settlement ke akun produsen.
     throw new Error('Release Midtrans belum dikonfigurasi.');
   }
-  console.log(`[payment.mock] RELEASE dana ke produsen untuk ${paymentRef}`);
+  const suffix = amount != null ? ` sebesar ${amount}` : '';
+  console.log(`[payment.mock] RELEASE dana ke produsen untuk ${paymentRef}${suffix}`);
 }
 
-export async function refundFunds(paymentRef: string): Promise<void> {
+export async function refundFunds(paymentRef: string, amount?: number): Promise<void> {
   if (provider === 'midtrans') {
-    // TODO(midtrans): panggil refund API.
+    // TODO(midtrans): panggil refund API (partial refund bila amount diisi).
     throw new Error('Refund Midtrans belum dikonfigurasi.');
   }
-  console.log(`[payment.mock] REFUND dana ke konsumen untuk ${paymentRef}`);
+  const suffix = amount != null ? ` sebesar ${amount}` : ' penuh';
+  console.log(`[payment.mock] REFUND dana ke konsumen untuk ${paymentRef}${suffix}`);
 }

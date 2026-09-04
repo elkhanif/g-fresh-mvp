@@ -25,12 +25,26 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
 
   const order = await prisma.order.findUnique({ where: { id: params.id } });
   if (!order) return NextResponse.json({ error: 'Order tidak ada.' }, { status: 404 });
-  if (order.status !== 'DIBAYAR' || order.courierId) {
-    return NextResponse.json({ error: 'Order tidak tersedia untuk diambil.' }, { status: 409 });
+
+  // Model penugasan: REBUTAN (siapa cepat dia dapat).
+  //
+  // Klaim harus ATOMIK. Kalau dipisah menjadi "cek lalu tulis", dua kurir yang
+  // menekan tombol nyaris bersamaan bisa lolos pengecekan bersama-sama dan
+  // saling menimpa courierId. updateMany dengan syarat `courierId: null`
+  // membuat database sendiri yang menjadi penengah: hanya satu baris yang
+  // benar-benar berubah, sisanya mendapat count 0.
+  const claim = await prisma.order.updateMany({
+    where: { id: params.id, status: 'DIBAYAR', courierId: null },
+    data: { courierId: courier.id },
+  });
+  if (claim.count === 0) {
+    return NextResponse.json(
+      { error: 'Tugas ini baru saja diambil kurir lain.' },
+      { status: 409 },
+    );
   }
 
-  await prisma.order.update({ where: { id: order.id }, data: { courierId: courier.id } });
-  const updated = await transitionOrder(order.id, 'DIJEMPUT_KURIR', {
+  const updated = await transitionOrder(params.id, 'DIJEMPUT_KURIR', {
     actorId: user.id,
     note: `Diambil kurir ${user.name}.`,
   });

@@ -31,6 +31,7 @@ model User {
   passwordHash String // bcrypt hash — BUKAN enkripsi reversibel
   role         Role
   kecamatan    String? // wilayah pilot (mis. "Kebomas", "Manyar", "Cerme")
+  defaultAddress String? // alamat tersimpan konsumen (prefill checkout)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -38,7 +39,9 @@ model User {
   courier      CourierProfile?
   orders       Order[]          @relation("ConsumerOrders")
   complaints   Complaint[]
-  hetSet       HetPrice[]       @relation("HetSetBy")
+  hetSet        HetPrice[]      @relation("HetSetBy")
+  notifications Notification[]
+  business      BusinessProfile?
 
   @@index([role])
 }
@@ -86,6 +89,32 @@ model CourierProfile {
 // Katalog & HET
 // ------------------------------------------------------------------
 
+// ------------------------------------------------------------------
+// #6 Notifikasi in-app (tanpa gateway eksternal)
+// ------------------------------------------------------------------
+
+enum NotifKind {
+  ORDER      // perubahan status pesanan
+  KOMPLAIN   // siklus komplain / sengketa
+  AKUN       // verifikasi, sanksi, sertifikasi
+  TAGIHAN    // invoice B2B
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      NotifKind @default(ORDER)
+  title     String
+  body      String
+  href      String? // tautan tujuan saat diklik
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+}
+
 model Category {
   id       String    @id @default(cuid())
   name     String    @unique // "Sayur", "Ikan", "Daging Ayam", "Beras"
@@ -113,6 +142,47 @@ model HetPrice {
   @@index([effectiveOn])
 }
 
+// ------------------------------------------------------------------
+// #8 Kanal B2B — mesin lintas-subsidi (platform fee 2,5%)
+// ------------------------------------------------------------------
+
+model BusinessProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName  String
+  businessType String // "Katering", "Restoran", "Hotel", "Retail"
+  npwp         String?
+  picName      String
+  picPhone     String
+  billingAddress String
+  verified     Boolean  @default(false) // diverifikasi admin sebelum boleh nego volume
+  createdAt    DateTime @default(now())
+}
+
+enum InvoiceStatus {
+  BELUM_DIBAYAR
+  LUNAS
+  JATUH_TEMPO
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  number      String        @unique // GF/B2B/2026/0001
+  orderId     String        @unique
+  order       Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  subtotal    Int
+  deliveryFee Int
+  platformFee Int // pendapatan operator (2,5% dari subtotal)
+  total       Int
+  status      InvoiceStatus @default(BELUM_DIBAYAR)
+  issuedAt    DateTime      @default(now())
+  dueDate     DateTime // termin pembayaran (net 14 hari)
+  paidAt      DateTime?
+
+  @@index([status])
+}
+
 model Product {
   id          String          @id @default(cuid())
   producerId  String
@@ -123,6 +193,9 @@ model Product {
   unit        String
   price       Int // rupiah / satuan — DIVALIDASI <= HET aktif saat simpan
   stock       Int             @default(0)
+  // Harga grosir B2B — berlaku bila qty >= b2bMinQty. Tetap divalidasi terhadap HET.
+  b2bPrice    Int?
+  b2bMinQty   Int?
   // Waktu panen DIDEKLARASIKAN produsen (self-reported). Ditampilkan apa adanya
   // di halaman traceability; bukan klaim terverifikasi independen.
   harvestedAt DateTime
@@ -150,6 +223,7 @@ enum OrderStatus {
   SENGKETA // ada komplain → menunggu keputusan
   DIBATALKAN // batal sebelum dibayar
   REFUND // komplain valid → dana dikembalikan ke konsumen
+  REFUND_SEBAGIAN // komplain sebagian valid → sebagian dana dikembalikan
 }
 
 enum EscrowStatus {
@@ -173,6 +247,8 @@ model Order {
   total          Int
 
   escrowStatus   EscrowStatus @default(NONE)
+  refundAmount   Int?         // nominal yang dikembalikan (untuk refund sebagian)
+  platformFee    Int          @default(0) // #8: fee operator, hanya pada kanal B2B
   paymentRef     String? // referensi dari payment gateway
   gracePeriodEnd DateTime? // batas akhir grace period saat status DITERIMA
 
@@ -183,6 +259,7 @@ model Order {
 
   items          OrderItem[]
   complaint      Complaint?
+  invoice        Invoice?
   events         OrderEvent[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -259,7 +336,12 @@ model Complaint {
   producerResponse   String? // alasan/sanggahan produsen
   producerEvidence   String[] // bukti tandingan dari produsen
   producerRespondedAt DateTime?
-  responseDeadline   DateTime? // batas waktu sanggah; lewat = eskalasi otomatis
+  responseDeadline   DateTime? // batas waktu sanggah produsen; lewat = eskalasi ke admin
+  adminDeadline      DateTime? // batas waktu admin memutus; lewat = auto-refund ke konsumen
+
+  // --- #7 Penilaian risiko penyalahgunaan klaim (dihitung saat komplain dibuat) ---
+  riskScore    Int      @default(0) // 0-100; makin tinggi makin patut dicurigai
+  riskFlags    String[] // penanda pola: RASIO_TINGGI, MENIT_AKHIR, KLAIM_BERULANG, dst
 
   createdAt    DateTime        @default(now())
 }

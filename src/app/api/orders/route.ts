@@ -4,7 +4,10 @@ import { prisma } from '@/lib/db';
 import { apiUser } from '@/lib/rbac';
 import { makeTraceCode } from '@/lib/qr';
 import { distanceKm, estimateDeliveryFee } from '@/lib/utils';
-import { isSuspended } from '@/lib/rating';
+import { isSuspended, deliverySubsidyFactor } from '@/lib/rating';
+import {
+  platformFeeOf, dueDateFrom, unitPriceFor, nextInvoiceNumber, B2B_MIN_SUBTOTAL,
+} from '@/lib/b2b';
 
 // GET /api/orders — daftar order sesuai peran.
 export async function GET() {
@@ -25,6 +28,7 @@ export async function GET() {
       items: { include: { product: { include: { producer: true } } } },
       consumer: { select: { name: true, phone: true } },
       courier: { include: { user: { select: { name: true, phone: true } } } },
+      invoice: true,
     },
     orderBy: { createdAt: 'desc' },
     take: 100,
@@ -52,11 +56,29 @@ export async function POST(req: Request) {
   }
   const d = parsed.data;
 
+  // Kanal B2B hanya untuk akun dengan profil bisnis terverifikasi.
+  if (d.channel === 'B2B') {
+    const biz = await prisma.businessProfile.findUnique({ where: { userId: user.id } });
+    if (!biz) {
+      return NextResponse.json(
+        { error: 'Lengkapi profil bisnis terlebih dahulu untuk memesan sebagai B2B.' },
+        { status: 403 },
+      );
+    }
+    if (!biz.verified) {
+      return NextResponse.json(
+        { error: 'Profil bisnis Anda belum diverifikasi admin.' },
+        { status: 403 },
+      );
+    }
+  }
+
   try {
     const order = await prisma.$transaction(async (tx) => {
       const itemRows = [];
       let subtotal = 0;
       let firstProducerCoords: { lat: number; lng: number } | null = null;
+      let firstProducerRating = 5;
 
       for (const it of d.items) {
         const p = await tx.product.findUnique({
@@ -77,16 +99,19 @@ export async function POST(req: Request) {
           data: { stock: { decrement: it.qty } },
         });
 
-        const lineTotal = p.price * it.qty;
+        // #8: harga grosir bila kanal B2B & kuantitas memenuhi minimum.
+        const { unitPrice } = unitPriceFor(p, d.channel, it.qty);
+        const lineTotal = unitPrice * it.qty;
         subtotal += lineTotal;
         if (!firstProducerCoords && p.producer.latitude && p.producer.longitude) {
           firstProducerCoords = { lat: p.producer.latitude, lng: p.producer.longitude };
         }
+        if (itemRows.length === 0) firstProducerRating = p.producer.ratingScore;
 
         itemRows.push({
           productId: p.id,
           qty: it.qty,
-          unitPrice: p.price,
+          unitPrice,
           lineTotal,
           traceCode: makeTraceCode(),
           harvestedAt: p.harvestedAt, // snapshot deklarasi produsen
@@ -95,12 +120,27 @@ export async function POST(req: Request) {
         });
       }
 
+      if (d.channel === 'B2B' && subtotal < B2B_MIN_SUBTOTAL) {
+        throw new Error(
+          `Nilai minimum pesanan B2B adalah ${B2B_MIN_SUBTOTAL.toLocaleString('id-ID')}. ` +
+          `Subtotal Anda ${subtotal.toLocaleString('id-ID')}.`,
+        );
+      }
+
       // Ongkir hyperlocal: jarak produsen → tujuan bila koordinat lengkap.
-      let deliveryFee = estimateDeliveryFee(3); // default ~3 km
+      let baseFee = estimateDeliveryFee(3); // default ~3 km
       if (firstProducerCoords && d.destLat != null && d.destLng != null) {
         const km = distanceKm(firstProducerCoords, { lat: d.destLat, lng: d.destLng });
-        deliveryFee = estimateDeliveryFee(km);
+        baseFee = estimateDeliveryFee(km);
       }
+      // #1: subsidi ongkir hanya untuk B2C — kanal B2B justru yang mendanainya.
+      const deliveryFee =
+        d.channel === 'B2C'
+          ? Math.round((baseFee * deliverySubsidyFactor(firstProducerRating)) / 500) * 500
+          : baseFee;
+
+      // #8: platform fee (2,5%) hanya dipungut pada kanal B2B.
+      const platformFee = d.channel === 'B2B' ? platformFeeOf(subtotal) : 0;
 
       const created = await tx.order.create({
         data: {
@@ -109,7 +149,8 @@ export async function POST(req: Request) {
           channel: d.channel,
           subtotal,
           deliveryFee,
-          total: subtotal + deliveryFee,
+          platformFee,
+          total: subtotal + deliveryFee + platformFee,
           addressText: d.addressText,
           destLat: d.destLat,
           destLng: d.destLng,
@@ -118,6 +159,24 @@ export async function POST(req: Request) {
         },
         include: { items: true },
       });
+
+      // #8: invoice bertermin (net 14 hari) otomatis untuk pesanan B2B.
+      if (d.channel === 'B2B') {
+        const issued = new Date();
+        await tx.invoice.create({
+          data: {
+            number: await nextInvoiceNumber(tx, issued),
+            orderId: created.id,
+            subtotal,
+            deliveryFee,
+            platformFee,
+            total: created.total,
+            issuedAt: issued,
+            dueDate: dueDateFrom(issued),
+          },
+        });
+      }
+
       return created;
     });
 

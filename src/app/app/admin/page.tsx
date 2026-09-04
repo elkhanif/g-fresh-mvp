@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { requireRole } from '@/lib/rbac';
 import { prisma } from '@/lib/db';
 import { rupiah } from '@/lib/utils';
@@ -6,6 +5,10 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
 import { CourierVerifyButton, ComplaintDecision } from '@/components/forms/AdminActions';
+import { BusinessVerifyButton } from '@/components/forms/BusinessVerifyButton';
+import { InvoicePayButton } from '@/components/forms/InvoicePayButton';
+import { riskLabel, FLAG_LABEL } from '@/lib/fraud';
+import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,7 +59,7 @@ export default async function AdminDashboard() {
   const [
     produsenCount, konsumenCount, kurirCount, kurirVerified, kurirAktif,
     orderCount, orderHariIni, activeOrders, gmvAgg,
-    escalated, menungguSanggahan, couriers,
+    escalated, menungguSanggahan, couriers, businesses, openInvoices, feeAgg,
   ] = await Promise.all([
     prisma.producerProfile.count(),
     prisma.user.count({ where: { role: 'KONSUMEN' } }),
@@ -83,6 +86,20 @@ export default async function AdminDashboard() {
     prisma.courierProfile.findMany({
       include: { user: { select: { name: true, phone: true } } },
       orderBy: { createdAt: 'desc' },
+    }),
+    prisma.businessProfile.findMany({
+      include: { user: { select: { name: true, email: true } } },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.invoice.findMany({
+      where: { status: { in: ['BELUM_DIBAYAR', 'JATUH_TEMPO'] } },
+      include: { order: { include: { consumer: { include: { business: true } } } } },
+      orderBy: { dueDate: 'asc' },
+      take: 20,
+    }),
+    prisma.order.aggregate({
+      _sum: { platformFee: true },
+      where: { channel: 'B2B', status: { in: ['SELESAI', 'DITERIMA', 'DIKIRIM', 'DIJEMPUT_KURIR', 'DIBAYAR'] } },
     }),
   ]);
 
@@ -133,16 +150,31 @@ export default async function AdminDashboard() {
               <Card key={c.id}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium">Order #{c.orderId.slice(-6)}</p>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Badge tone={c.producerStance === 'TOLAK' ? 'red' : 'amber'}>
                       {c.producerStance === 'TOLAK' ? 'Produsen menyanggah' : 'Produsen tidak merespon'}
                     </Badge>
+                    {c.adminDeadline && (
+                      <Badge tone={c.adminDeadline < new Date() ? 'red' : 'amber'}>
+                        {c.adminDeadline < new Date()
+                          ? 'SLA lewat — akan auto-refund'
+                          : `putuskan sebelum ${new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(c.adminDeadline)}`}
+                      </Badge>
+                    )}
                     <OrderStatusBadge status={c.order.status} />
                   </div>
                 </div>
                 <p className="text-xs text-ink/50">
                   {c.order.items[0]?.product.producer.farmName} → {c.order.consumer.name} · Nilai {rupiah(c.order.total)}
                 </p>
+
+                {/* #7 Konteks risiko penyalahgunaan klaim — bahan pertimbangan, bukan penentu */}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Badge tone={riskLabel(c.riskScore).tone}>{riskLabel(c.riskScore).text}</Badge>
+                  {c.riskFlags.map((f) => (
+                    <Badge key={f} tone="neutral">{FLAG_LABEL[f] ?? f}</Badge>
+                  ))}
+                </div>
 
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <div className="rounded-lg bg-leaf-50 p-3">
@@ -160,8 +192,66 @@ export default async function AdminDashboard() {
                 </div>
 
                 <div className="mt-3">
-                  <ComplaintDecision complaintId={c.id} />
+                  <ComplaintDecision complaintId={c.id} orderTotal={c.order.total} />
                 </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">Kanal B2B</h2>
+          <span className="text-sm text-ink/60">
+            Pendapatan platform terkumpul: <b className="text-leaf-700">{rupiah(feeAgg._sum.platformFee ?? 0)}</b>
+          </span>
+        </div>
+
+        <h3 className="mb-2 text-sm font-semibold text-ink/70">Pembeli bisnis</h3>
+        {businesses.length === 0 ? (
+          <Card className="mb-4"><p className="text-ink/60">Belum ada pendaftaran B2B.</p></Card>
+        ) : (
+          <div className="mb-4 space-y-3">
+            {businesses.map((b) => (
+              <Card key={b.id} className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium">{b.companyName}</p>
+                  <p className="flex flex-wrap items-center gap-2 text-sm text-ink/60">
+                    {b.businessType} · PIC {b.picName} ({b.picPhone})
+                    {b.verified ? <Badge tone="green">terverifikasi</Badge> : <Badge tone="amber">menunggu</Badge>}
+                  </p>
+                  <p className="text-xs text-ink/45">{b.user.email} · {b.billingAddress}</p>
+                </div>
+                <BusinessVerifyButton businessId={b.id} verified={b.verified} />
+              </Card>
+            ))}
+          </div>
+        )}
+
+        <h3 className="mb-2 text-sm font-semibold text-ink/70">Tagihan belum lunas</h3>
+        {openInvoices.length === 0 ? (
+          <Card><p className="text-ink/60">Tidak ada tagihan terbuka.</p></Card>
+        ) : (
+          <div className="space-y-3">
+            {openInvoices.map((i) => (
+              <Card key={i.id} className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link href={`/app/konsumen/invoice/${i.id}`} className="font-medium text-leaf-700 hover:underline">
+                      {i.number}
+                    </Link>
+                    <Badge tone={i.status === 'JATUH_TEMPO' ? 'red' : 'amber'}>
+                      {i.status === 'JATUH_TEMPO' ? 'jatuh tempo' : 'belum dibayar'}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-ink/60">
+                    {i.order.consumer.business?.companyName ?? i.order.consumer.name} · {rupiah(i.total)}
+                    {' · '}jatuh tempo {new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(i.dueDate)}
+                  </p>
+                  <p className="text-xs text-ink/45">Fee platform {rupiah(i.platformFee)}</p>
+                </div>
+                <InvoicePayButton invoiceId={i.id} />
               </Card>
             ))}
           </div>

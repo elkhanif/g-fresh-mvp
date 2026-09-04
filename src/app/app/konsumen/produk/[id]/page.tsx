@@ -2,10 +2,13 @@ import { notFound } from 'next/navigation';
 import { requireRole } from '@/lib/rbac';
 import { prisma } from '@/lib/db';
 import { getActiveHet } from '@/lib/het';
+import { subsidyPercent } from '@/lib/rating';
+import { getSessionUser } from '@/lib/rbac';
 import { rupiah } from '@/lib/utils';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { CertBadge } from '@/components/CertBadge';
+import { PerfBadge } from '@/components/PerfBadge';
 import { ProductOrderForm } from '@/components/forms/ProductOrderForm';
 
 export const dynamic = 'force-dynamic';
@@ -16,12 +19,20 @@ function fmt(d: Date) {
 
 export default async function ProductDetail({ params }: { params: { id: string } }) {
   await requireRole('KONSUMEN');
+  const me = await getSessionUser();
+  const account = me
+    ? await prisma.user.findUnique({
+        where: { id: me.id },
+        select: { defaultAddress: true, business: true },
+      })
+    : null;
   const p = await prisma.product.findUnique({
     where: { id: params.id },
     include: { category: true, producer: true },
   });
   if (!p) notFound();
   const het = await getActiveHet(p.categoryId);
+  const subsidi = subsidyPercent(p.producer.ratingScore);
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -43,11 +54,20 @@ export default async function ProductDetail({ params }: { params: { id: string }
 
         <Card className="mt-4 space-y-2 text-sm">
           <div className="flex justify-between"><span className="text-ink/60">Produsen</span><span className="font-medium">{p.producer.farmName}</span></div>
+          <div className="flex justify-between"><span className="text-ink/60">Reputasi</span><PerfBadge rating={p.producer.ratingScore} /></div>
           <div className="flex justify-between"><span className="text-ink/60">Lokasi</span><span className="font-medium">Kec. {p.producer.kecamatan}</span></div>
           <div className="flex justify-between"><span className="text-ink/60">Panen (dilaporkan produsen)</span><span className="font-medium">{fmt(p.harvestedAt)}</span></div>
           <div className="flex justify-between"><span className="text-ink/60">Stok</span><span className="font-medium">{p.stock} {p.unit}</span></div>
           {het && (
             <div className="flex justify-between"><span className="text-ink/60">HET kategori</span><span className="font-medium">{rupiah(het.maxPrice)}</span></div>
+          )}
+          {p.b2bPrice != null && p.b2bMinQty != null && (
+            <div className="flex justify-between">
+              <span className="text-ink/60">Harga grosir (B2B)</span>
+              <span className="font-medium text-leaf-700">
+                {rupiah(p.b2bPrice)} · min {p.b2bMinQty} {p.unit}
+              </span>
+            </div>
           )}
         </Card>
       </div>
@@ -55,7 +75,18 @@ export default async function ProductDetail({ params }: { params: { id: string }
       <div>
         <Card>
           <h2 className="mb-3 font-semibold">Pesan</h2>
-          <ProductOrderForm productId={p.id} price={p.price} unit={p.unit} maxStock={p.stock} />
+          <ProductOrderForm
+            productId={p.id}
+            price={p.price}
+            unit={p.unit}
+            maxStock={p.stock}
+            defaultAddress={account?.defaultAddress ?? ''}
+            subsidyPct={subsidi}
+            b2bPrice={p.b2bPrice}
+            b2bMinQty={p.b2bMinQty}
+            b2bEligible={!!account?.business?.verified}
+            billingAddress={account?.business?.billingAddress ?? ''}
+          />
           <p className="mt-3 text-xs text-ink/50">
             Setelah bayar, dana ditahan sistem (escrow) dan baru diteruskan ke produsen setelah Anda
             menerima pesanan dan masa garansi 2 jam berlalu tanpa komplain.

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { requireUser } from '@/lib/rbac';
 import { Providers } from '@/components/Providers';
 import { SignOutButton } from '@/components/SignOutButton';
+import { NotificationBell } from '@/components/NotificationBell';
 import type { Role } from '@prisma/client';
 
 const NAV: Record<Role, { href: string; label: string }[]> = {
@@ -14,6 +15,7 @@ const NAV: Record<Role, { href: string; label: string }[]> = {
     { href: '/app/konsumen', label: 'Belanja' },
     { href: '/app/konsumen/pesanan', label: 'Pesanan saya' },
     { href: '/app/konsumen/scan', label: 'Scan QR' },
+    { href: '/app/konsumen/bisnis', label: 'Akun bisnis' },
   ],
   KURIR: [
     { href: '/app/kurir', label: 'Tugas kurir' },
@@ -49,7 +51,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               </nav>
             </div>
             <div className="flex items-center gap-2">
-              <span className="hidden text-sm text-ink/60 sm:inline">{user.name}</span>
+              <NotificationBell />
+              <Link href="/app/akun" className="hidden text-sm text-ink/70 hover:text-leaf-700 sm:inline">
+                {user.name}
+              </Link>
+              <Link href="/app/akun" className="text-sm text-ink/70 hover:text-leaf-700 sm:hidden">
+                Akun
+              </Link>
               <SignOutButton />
             </div>
           </div>

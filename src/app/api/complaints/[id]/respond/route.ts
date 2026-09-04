@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { apiUser } from '@/lib/rbac';
 import { transitionOrder } from '@/lib/escrow';
-import { canProducerRespond } from '@/lib/complaint';
+import { canProducerRespond, adminDeadlineFrom } from '@/lib/complaint';
 import { uploadEvidence, type IncomingFile } from '@/lib/storage';
 
 // POST /api/complaints/[id]/respond — hak sanggah produsen.
@@ -78,6 +78,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       producerEvidence,
       producerRespondedAt: new Date(),
       status: 'DITINJAU',
+      adminDeadline: adminDeadlineFrom(),
     },
   });
   return NextResponse.json({ stance, resolved: false, complaint: updated });

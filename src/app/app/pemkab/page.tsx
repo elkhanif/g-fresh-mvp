@@ -37,7 +37,7 @@ export default async function PemkabDashboard() {
   const categories = await prisma.category.findMany({ orderBy: { name: 'asc' } });
 
   const [
-    producers, kurirAktif, selesai, refund, dibatalkan, komplainCount, gmv,
+    producers, kurirAktif, selesai, refund, dibatalkan, komplainCount, gmv, b2bAgg, b2bCount,
   ] = await Promise.all([
     prisma.producerProfile.findMany({
       include: { user: { select: { name: true } } },
@@ -49,6 +49,8 @@ export default async function PemkabDashboard() {
     prisma.order.count({ where: { status: 'DIBATALKAN' } }),
     prisma.complaint.count(),
     prisma.order.aggregate({ _sum: { total: true }, where: { status: 'SELESAI' } }),
+    prisma.order.aggregate({ _sum: { subtotal: true, platformFee: true }, where: { channel: 'B2B' } }),
+    prisma.order.count({ where: { channel: 'B2B' } }),
   ]);
 
   // Urutkan produsen: yang butuh tindakan di atas.
@@ -118,6 +120,11 @@ export default async function PemkabDashboard() {
         </div>
         <p className="mt-2 text-xs text-ink/50">
           GMV transaksi selesai: <b>{rupiah(gmv._sum.total ?? 0)}</b> · Sertifikasi pending: {pendingCount}
+        </p>
+        <p className="mt-1 text-xs text-ink/50">
+          Kanal B2B: <b>{b2bCount}</b> pesanan · nilai <b>{rupiah(b2bAgg._sum.subtotal ?? 0)}</b> ·
+          biaya layanan terkumpul <b>{rupiah(b2bAgg._sum.platformFee ?? 0)}</b> (mendanai subsidi ongkir B2C,
+          tanpa beban APBD)
         </p>
       </section>
 

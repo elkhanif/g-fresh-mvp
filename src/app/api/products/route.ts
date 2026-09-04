@@ -39,6 +39,9 @@ const createSchema = z.object({
   harvestedAt: z.string(),
   // Terima path lokal (/uploads/...) maupun URL penuh (Supabase). Bukan .url().
   photoUrl: z.string().min(1).optional(),
+  // #8: harga grosir B2B opsional (harus <= harga ritel).
+  b2bPrice: z.number().int().positive().optional(),
+  b2bMinQty: z.number().int().positive().optional(),
 });
 
 // POST /api/products — produsen menambah produk. Harga divalidasi terhadap HET.
@@ -61,6 +64,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: check.reason, het: check.het }, { status: 422 });
   }
 
+  // Harga grosir wajib lebih murah dari harga ritel dan punya kuantitas minimum.
+  if (d.b2bPrice != null) {
+    if (d.b2bPrice >= d.price) {
+      return NextResponse.json(
+        { error: 'Harga grosir B2B harus lebih rendah dari harga ritel.' },
+        { status: 422 },
+      );
+    }
+    if (!d.b2bMinQty) {
+      return NextResponse.json(
+        { error: 'Tetapkan kuantitas minimum untuk harga grosir.' },
+        { status: 422 },
+      );
+    }
+  }
+
   const product = await prisma.product.create({
     data: {
       producerId: producer.id,
@@ -71,6 +90,8 @@ export async function POST(req: Request) {
       stock: d.stock,
       harvestedAt: new Date(d.harvestedAt),
       photoUrl: d.photoUrl,
+      b2bPrice: d.b2bPrice,
+      b2bMinQty: d.b2bMinQty,
     },
   });
   return NextResponse.json(product, { status: 201 });

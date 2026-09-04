@@ -3,7 +3,9 @@ import { prisma } from '@/lib/db';
 import { apiUser } from '@/lib/rbac';
 import { transitionOrder } from '@/lib/escrow';
 import { uploadEvidence, type IncomingFile } from '@/lib/storage';
-import { responseDeadlineFrom } from '@/lib/complaint';
+import { responseDeadlineFrom, producerIdOfOrder } from '@/lib/complaint';
+import { assessClaim } from '@/lib/fraud';
+import { notify, userIdOfProducer } from '@/lib/notification';
 
 // POST /api/complaints — konsumen melaporkan produk tidak sesuai.
 // Menerima multipart/form-data: orderId, reason, dan file "evidence" (bisa banyak).
@@ -48,6 +50,16 @@ export async function POST(req: Request) {
     }
   }
 
+  // #7 Penilaian anti-penyalahgunaan: batas keras + skor risiko.
+  const assessment = await assessClaim({
+    userId: user.id,
+    gracePeriodEnd: order.gracePeriodEnd,
+    hasEvidence: evidenceUrls.length > 0,
+  });
+  if (!assessment.allowed) {
+    return NextResponse.json({ error: assessment.reason }, { status: 429 });
+  }
+
   // Komplain masuk masa sanggah produsen lebih dulu (hak jawab), bukan langsung ke admin.
   const complaint = await prisma.complaint.create({
     data: {
@@ -57,6 +69,8 @@ export async function POST(req: Request) {
       evidenceUrls,
       status: 'MENUNGGU_SANGGAHAN',
       responseDeadline: responseDeadlineFrom(),
+      riskScore: assessment.riskScore,
+      riskFlags: assessment.flags,
     },
   });
 
@@ -65,6 +79,22 @@ export async function POST(req: Request) {
     actorId: user.id,
     note: 'Konsumen mengajukan komplain kesegaran.',
   });
+
+  // #6 Beri tahu produsen bahwa ia punya hak & tenggat untuk menyanggah.
+  const pid = await producerIdOfOrder(order.id);
+  if (pid) {
+    const uid = await userIdOfProducer(pid);
+    if (uid) {
+      await notify({
+        userId: uid,
+        kind: 'KOMPLAIN',
+        title: 'Komplain perlu tanggapan Anda',
+        body: `Pesanan #${order.id.slice(-6)} dikomplain. Anda punya 12 jam untuk menyetujui atau menyanggah.`,
+        href: '/app/produsen/komplain',
+        alsoWhatsApp: true,
+      });
+    }
+  }
 
   return NextResponse.json(complaint, { status: 201 });
 }

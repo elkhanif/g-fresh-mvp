@@ -11,6 +11,7 @@ export function AddProductForm({ categories }: { categories: Cat[] }) {
   const [f, setF] = useState({
     name: '', categoryId: categories[0]?.id ?? '', unit: categories[0]?.unit ?? 'kg',
     price: '', stock: '', harvestedAt: new Date().toISOString().slice(0, 16),
+    b2bPrice: '', b2bMinQty: '',
   });
   const [photo, setPhoto] = useState<File | null>(null);
   const [msg, setMsg] = useState('');
@@ -41,13 +42,15 @@ export function AddProductForm({ categories }: { categories: Cat[] }) {
         price: Number(f.price), stock: Number(f.stock),
         harvestedAt: new Date(f.harvestedAt).toISOString(),
         photoUrl,
+        b2bPrice: f.b2bPrice ? Number(f.b2bPrice) : undefined,
+        b2bMinQty: f.b2bMinQty ? Number(f.b2bMinQty) : undefined,
       }),
     });
     setLoading(false);
     const j = await res.json().catch(() => ({}));
     if (!res.ok) { setMsg(j.error || 'Gagal menambahkan produk.'); return; }
 
-    setF((s) => ({ ...s, name: '', price: '', stock: '' }));
+    setF((s) => ({ ...s, name: '', price: '', stock: '', b2bPrice: '', b2bMinQty: '' }));
     setPhoto(null);
     setMsg('Produk ditambahkan.');
     router.refresh();
@@ -96,6 +99,25 @@ export function AddProductForm({ categories }: { categories: Cat[] }) {
           <Input type="number" value={f.stock} onChange={(e) => set('stock', e.target.value)} required min={0} />
         </div>
       </div>
+      <div className="rounded-lg border border-leaf-100 p-3">
+        <p className="mb-2 text-sm font-medium">Harga grosir B2B (opsional)</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>Harga grosir / satuan</Label>
+            <Input type="number" value={f.b2bPrice} onChange={(e) => set('b2bPrice', e.target.value)}
+              min={1} placeholder="lebih murah dari ritel" />
+          </div>
+          <div>
+            <Label>Minimum qty</Label>
+            <Input type="number" value={f.b2bMinQty} onChange={(e) => set('b2bMinQty', e.target.value)}
+              min={1} placeholder="mis. 20" />
+          </div>
+        </div>
+        <p className="mt-1 text-xs text-ink/50">
+          Diisi bila Anda siap melayani katering/restoran dalam volume. Harga grosir wajib lebih rendah dari harga ritel.
+        </p>
+      </div>
+
       <div>
         <Label>Waktu panen (Anda yang melaporkan)</Label>
         <Input type="datetime-local" value={f.harvestedAt} onChange={(e) => set('harvestedAt', e.target.value)} />

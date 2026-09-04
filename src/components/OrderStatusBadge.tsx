@@ -11,6 +11,7 @@ const map: Record<OrderStatus, { label: string; tone: 'neutral' | 'green' | 'amb
   SENGKETA: { label: 'Sengketa', tone: 'red' },
   DIBATALKAN: { label: 'Dibatalkan', tone: 'neutral' },
   REFUND: { label: 'Refund', tone: 'red' },
+  REFUND_SEBAGIAN: { label: 'Refund sebagian', tone: 'amber' },
 };
 
 export function OrderStatusBadge({ status }: { status: OrderStatus }) {

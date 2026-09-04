@@ -6,15 +6,28 @@ import { SUSPEND_RATING } from '@/lib/rating';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { CertBadge } from '@/components/CertBadge';
+import { SearchFilter } from '@/components/forms/SearchFilter';
 
 export const dynamic = 'force-dynamic';
 
-export default async function Marketplace() {
+export default async function Marketplace({
+  searchParams,
+}: {
+  searchParams: { q?: string; kategori?: string };
+}) {
   await requireRole('KONSUMEN');
+  const q = searchParams.q?.trim() || '';
+  const kategori = searchParams.kategori || '';
+  const categories = await prisma.category.findMany({
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' },
+  });
   const products = await prisma.product.findMany({
     where: {
       active: true,
       stock: { gt: 0 },
+      categoryId: kategori || undefined,
+      name: q ? { contains: q, mode: 'insensitive' } : undefined,
       // Sanksi bertingkat: sembunyikan produk dari produsen yang ditangguhkan.
       producer: { ratingScore: { gte: SUSPEND_RATING } },
     },
@@ -31,8 +44,10 @@ export default async function Marketplace() {
       <h1 className="mb-1 text-xl font-semibold">Belanja pangan segar</h1>
       <p className="mb-4 text-sm text-ink/60">Langsung dari produsen Gresik. Harga sudah di bawah HET.</p>
 
+      <SearchFilter categories={categories} initialQ={q} initialCat={kategori} />
+
       {products.length === 0 ? (
-        <Card><p className="text-ink/60">Belum ada produk tersedia. Cek lagi nanti ya.</p></Card>
+        <Card><p className="text-ink/60">{q || kategori ? 'Tidak ada produk yang cocok dengan pencarian.' : 'Belum ada produk tersedia. Cek lagi nanti ya.'}</p></Card>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {products.map((p) => (
