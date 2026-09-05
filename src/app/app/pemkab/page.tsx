@@ -4,8 +4,9 @@ import { getActiveHet } from '@/lib/het';
 import { rupiah } from '@/lib/utils';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import { CertBadge } from '@/components/CertBadge';
-import { HetForm, CertVerifyForm } from '@/components/forms/PemkabForms';
+import { HetForm } from '@/components/forms/PemkabForms';
+import { CertReviewPanel, type CertRow } from '@/components/forms/CertReviewPanel';
+import { needsAction } from '@/lib/cert';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,14 +54,23 @@ export default async function PemkabDashboard() {
     prisma.order.count({ where: { channel: 'B2B' } }),
   ]);
 
-  // Urutkan produsen: yang butuh tindakan di atas.
-  const rank: Record<string, number> = {
-    MENUNGGU_VERIFIKASI: 0, BELUM_DIAJUKAN: 1, DITOLAK: 2, TERVERIFIKASI: 3,
-  };
-  producers.sort((a, b) => rank[a.certStatus] - rank[b.certStatus]);
-  const pendingCount = producers.filter(
-    (p) => p.certStatus === 'MENUNGGU_VERIFIKASI' || p.certStatus === 'BELUM_DIAJUKAN',
-  ).length;
+  // Pengurutan & penyaringan antrean dilakukan di panel (klien), supaya dinas
+  // bisa berpindah tab tanpa memuat ulang halaman. Di sini cukup diserialkan.
+  const certRows: CertRow[] = producers.map((p) => ({
+    id: p.id,
+    farmName: p.farmName,
+    ownerName: p.user.name,
+    kecamatan: p.kecamatan,
+    certStatus: p.certStatus,
+    certType: p.certType,
+    certNumber: p.certNumber,
+    certIssuer: p.certIssuer,
+    certExpiresAt: p.certExpiresAt ? p.certExpiresAt.toISOString() : null,
+    certSubmittedAt: p.certSubmittedAt ? p.certSubmittedAt.toISOString() : null,
+    certDocUrl: p.certDocUrl,
+    certNote: p.certNote,
+  }));
+  const pendingCount = producers.filter((p) => needsAction(p.certStatus)).length;
 
   // Perhitungan KPI (Target Capaian 10.1).
   const TARGET_PRODUSEN = 100;
@@ -163,19 +173,7 @@ export default async function PemkabDashboard() {
         {producers.length === 0 ? (
           <Card><p className="text-ink/60">Belum ada produsen terdaftar di sistem.</p></Card>
         ) : (
-          <div className="space-y-3">
-            {producers.map((p) => (
-              <Card key={p.id} className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium">{p.farmName}</p>
-                  <p className="text-sm text-ink/60">
-                    {p.user.name} · Kec. {p.kecamatan} · <CertBadge status={p.certStatus} type={p.certType} />
-                  </p>
-                </div>
-                <CertVerifyForm producerId={p.id} currentType={p.certType} />
-              </Card>
-            ))}
-          </div>
+          <CertReviewPanel rows={certRows} />
         )}
       </section>
     </div>

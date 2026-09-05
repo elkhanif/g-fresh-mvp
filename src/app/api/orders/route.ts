@@ -8,6 +8,7 @@ import { isSuspended, deliverySubsidyFactor } from '@/lib/rating';
 import {
   platformFeeOf, dueDateFrom, unitPriceFor, nextInvoiceNumber, B2B_MIN_SUBTOTAL,
 } from '@/lib/b2b';
+import { adjustStock, StockError } from '@/lib/inventory';
 
 // GET /api/orders — daftar order sesuai peran.
 export async function GET() {
@@ -81,6 +82,7 @@ export async function POST(req: Request) {
   try {
     const order = await prisma.$transaction(async (tx) => {
       const itemRows = [];
+      const movementIds: string[] = []; // mutasi stok yang perlu ditandai orderId
       let subtotal = 0;
       let firstProducerCoords: { lat: number; lng: number } | null = null;
       let firstProducerRating = 5;
@@ -98,11 +100,26 @@ export async function POST(req: Request) {
         }
         if (p.stock < it.qty) throw new Error(`Stok "${p.name}" tidak cukup (sisa ${p.stock}).`);
 
-        // Reservasi stok.
-        await tx.product.update({
-          where: { id: p.id },
-          data: { stock: { decrement: it.qty } },
+        // Reservasi stok — lewat adjustStock supaya (a) syarat stok cukup
+        // dievaluasi di dalam WHERE (bukan read-then-write seperti cek di
+        // atas, yang bisa kalah balapan), dan (b) potongannya ikut tercatat
+        // di buku besar StockMovement. Tanpa ini, produsen lihat stok turun
+        // tanpa jejak dan buku besar bohong.
+        const mv = await adjustStock(tx, {
+          productId: p.id,
+          delta: -it.qty,
+          reason: 'PENJUALAN_APP',
+          note: `Checkout ${d.channel}`,
+          actorId: user.id,
+        }).catch((e) => {
+          // Hanya kalah balapan stok yang diterjemahkan jadi pesan ramah;
+          // error lain jangan disamarkan supaya tetap kelihatan saat debug.
+          if (e instanceof StockError) {
+            throw new Error(`Stok "${p.name}" baru saja berubah. Muat ulang halaman lalu pesan lagi.`);
+          }
+          throw e;
         });
+        movementIds.push(mv.id);
 
         // #8: harga grosir bila kanal B2B & kuantitas memenuhi minimum.
         const { unitPrice } = unitPriceFor(p, d.channel, it.qty);
@@ -164,6 +181,16 @@ export async function POST(req: Request) {
         },
         include: { items: true },
       });
+
+      // Tautkan mutasi stok ke order-nya. Dilakukan setelah order dibuat
+      // karena ID-nya baru ada di sini; masih di dalam transaksi yang sama,
+      // jadi tidak mungkin setengah jadi.
+      if (movementIds.length) {
+        await tx.stockMovement.updateMany({
+          where: { id: { in: movementIds } },
+          data: { orderId: created.id },
+        });
+      }
 
       // #8: invoice bertermin (net 14 hari) otomatis untuk pesanan B2B.
       if (d.channel === 'B2B') {

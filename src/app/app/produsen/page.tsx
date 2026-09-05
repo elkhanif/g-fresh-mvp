@@ -1,4 +1,5 @@
 import { requireRole } from '@/lib/rbac';
+import { Icon } from '@/components/ui/Icon';
 import { prisma } from '@/lib/db';
 import { getActiveHet } from '@/lib/het';
 import { rupiah } from '@/lib/utils';
@@ -7,6 +8,7 @@ import { Badge } from '@/components/ui/Badge';
 import { CertBadge } from '@/components/CertBadge';
 import { PerfBadge } from '@/components/PerfBadge';
 import { AddProductForm } from '@/components/forms/AddProductForm';
+import { ProductActions } from '@/components/forms/ProductActions';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,10 +20,10 @@ export default async function ProdusenDashboard() {
   });
   const categories = await prisma.category.findMany({ orderBy: { name: 'asc' } });
 
-  const hetByCat: Record<string, number | null> = {};
+  const hetByCat: Record<string, { max: number | null; floor: number | null }> = {};
   for (const c of categories) {
     const h = await getActiveHet(c.id);
-    hetByCat[c.id] = h?.maxPrice ?? null;
+    hetByCat[c.id] = { max: h?.maxPrice ?? null, floor: h?.floorPrice ?? null };
   }
 
   return (
@@ -38,15 +40,16 @@ export default async function ProdusenDashboard() {
         {producer?.products.length ? (
           <div className="space-y-3">
             {producer.products.map((p) => {
-              const het = hetByCat[p.categoryId];
+              const het = hetByCat[p.categoryId]?.max ?? null;
+              const floor = hetByCat[p.categoryId]?.floor ?? null;
               return (
-                <Card key={p.id} className="flex items-center gap-3">
+                <Card key={p.id} className="flex items-start gap-3">
                   <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-leaf-50">
                     {p.photoUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={p.photoUrl} alt={p.name} className="h-full w-full object-cover" />
                     ) : (
-                      <div className="flex h-full items-center justify-center text-xl text-leaf-200">🥬</div>
+                      <div className="flex h-full items-center justify-center text-leaf-300"><Icon name="basket" size={22} /></div>
                     )}
                   </div>
                   <div className="flex-1">
@@ -57,10 +60,27 @@ export default async function ProdusenDashboard() {
                     </div>
                     <p className="mt-1 text-sm text-ink/60">
                       {rupiah(p.price)}/{p.unit} · stok {p.stock}
+                      {p.stock === 0 && (
+                        <span className="ml-2 text-red-600">· habis, tidak tampil di marketplace</span>
+                      )}
                       {het != null && p.price >= het && (
                         <span className="ml-2 text-amber-700">· tepat di HET {rupiah(het)}</span>
                       )}
                     </p>
+                    <ProductActions
+                      product={{
+                        id: p.id,
+                        name: p.name,
+                        unit: p.unit,
+                        price: p.price,
+                        stock: p.stock,
+                        b2bPrice: p.b2bPrice,
+                        b2bMinQty: p.b2bMinQty,
+                        active: p.active,
+                      }}
+                      hetMax={het}
+                      hetFloor={floor}
+                    />
                   </div>
                 </Card>
               );

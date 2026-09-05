@@ -51,7 +51,7 @@ export function OrderActions({
 
   if (status === 'MENUNGGU_BAYAR') {
     return (
-      <Button onClick={() => call(`/api/orders/${orderId}/pay`, 'pay')} disabled={loading === 'pay'}>
+      <Button variant="cta" onClick={() => call(`/api/orders/${orderId}/pay`, 'pay')} disabled={loading === 'pay'}>
         {loading === 'pay' ? 'Memproses…' : 'Bayar sekarang'}
       </Button>
     );
@@ -116,7 +116,7 @@ export function OrderActions({
   return (
     <div className="space-y-2">
       {status === 'DITERIMA' && (
-        <Button onClick={() => call(`/api/orders/${orderId}/complete`, 'done')} disabled={loading === 'done'}>
+        <Button variant="cta" onClick={() => call(`/api/orders/${orderId}/complete`, 'done')} disabled={loading === 'done'}>
           Konfirmasi pesanan baik → selesaikan
         </Button>
       )}

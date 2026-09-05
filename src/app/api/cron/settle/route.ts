@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { settleExpiredGracePeriods } from '@/lib/escrow';
 import { escalateExpiredResponses, escalateStaleOffers, autoResolveStaleAdminDisputes } from '@/lib/complaint';
 import { markOverdueInvoices } from '@/lib/b2b';
+import { markExpiredCertifications } from '@/lib/cert-expiry';
 
 // GET /api/cron/settle — dipanggil terjadwal (mis. tiap 10 menit) untuk
 // menyelesaikan order yang grace period-nya lewat tanpa komplain.
@@ -23,12 +24,15 @@ export async function GET(req: Request) {
   const autoRefunded = await autoResolveStaleAdminDisputes();
   // #8: invoice B2B yang melewati jatuh tempo ditandai JATUH_TEMPO.
   const overdue = await markOverdueInvoices();
+  // Sertifikasi produsen yang masa berlakunya lewat → KEDALUWARSA + jejak audit.
+  const expiredCerts = await markExpiredCertifications();
   return NextResponse.json({
     settled: results.length,
     escalated: escalated.length,
     staleOffersEscalated: staleOffers.length,
     autoRefunded: autoRefunded.length,
     overdueInvoices: overdue,
+    expiredCertifications: expiredCerts.length,
     results,
   });
 }

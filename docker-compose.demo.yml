@@ -1,0 +1,31 @@
+# PostgreSQL lokal untuk demo tanpa internet.
+#
+# Alasan berkas ini ada: database produksi G-Fresh ada di Neon (cloud). Saat
+# presentasi di aula/ruang lomba, wifi sering jelek atau diblokir, dan Neon
+# punya cold start beberapa detik yang terasa canggung ditonton juri. Dengan
+# ini, seluruh aplikasi berjalan dari laptop — tanpa jaringan sama sekali.
+#
+# Port 5433 dipakai (bukan 5432) supaya tidak bentrok dengan PostgreSQL lain
+# yang mungkin sudah jalan di laptop.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: gfresh-demo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gfresh
+      POSTGRES_PASSWORD: gfresh_demo
+      POSTGRES_DB: gfresh
+    ports:
+      - '5433:5432'
+    volumes:
+      - gfresh_demo_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U gfresh -d gfresh']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  gfresh_demo_data:

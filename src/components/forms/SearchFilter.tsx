@@ -1,17 +1,18 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Input, Select } from '@/components/ui/Input';
-import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
 
-type Cat = { id: string; name: string };
-
-export function SearchFilter({
-  categories, initialQ, initialCat,
-}: { categories: Cat[]; initialQ: string; initialCat: string }) {
+/**
+ * Kolom pencarian katalog.
+ *
+ * Dropdown kategori DIHAPUS: baris ikon kategori tepat di atasnya melakukan
+ * hal yang sama persis, dan dua kontrol untuk satu fungsi membuat layar
+ * mobile penuh tanpa menambah kemampuan apa pun.
+ */
+export function SearchFilter({ initialQ, initialCat }: { initialQ: string; initialCat: string }) {
   const router = useRouter();
   const [q, setQ] = useState(initialQ);
-  const [cat, setCat] = useState(initialCat);
 
   function apply(nextQ: string, nextCat: string) {
     const p = new URLSearchParams();
@@ -22,29 +23,41 @@ export function SearchFilter({
 
   return (
     <form
-      onSubmit={(e) => { e.preventDefault(); apply(q, cat); }}
-      className="mb-4 flex flex-col gap-2 sm:flex-row"
+      onSubmit={(e) => {
+        e.preventDefault();
+        apply(q, initialCat);
+      }}
+      className="mb-4"
     >
-      <Input
-        placeholder="Cari produk… (mis. bayam, bandeng)"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        className="flex-1"
-      />
-      <Select
-        value={cat}
-        onChange={(e) => { setCat(e.target.value); apply(q, e.target.value); }}
-        className="sm:w-48"
-      >
-        <option value="">Semua kategori</option>
-        {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-      </Select>
-      <Button type="submit" className="sm:w-28">Cari</Button>
-      {(initialQ || initialCat) && (
-        <Button type="button" variant="ghost" onClick={() => { setQ(''); setCat(''); apply('', ''); }}>
-          Reset
-        </Button>
-      )}
+      <div className="flex items-center gap-2 rounded-xl border border-leaf-200 bg-white px-3 py-2 focus-within:border-leaf-400">
+        <span className="text-ink/40">
+          <Icon name="search" size={19} />
+        </span>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari bayam, bandeng, beras…"
+          className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink/35"
+        />
+        {(q || initialQ || initialCat) && (
+          <button
+            type="button"
+            onClick={() => {
+              setQ('');
+              apply('', '');
+            }}
+            className="shrink-0 text-xs text-ink/45 hover:text-red-600"
+          >
+            Reset
+          </button>
+        )}
+        <button
+          type="submit"
+          className="shrink-0 rounded-lg bg-leaf-600 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-leaf-700"
+        >
+          Cari
+        </button>
+      </div>
     </form>
   );
 }

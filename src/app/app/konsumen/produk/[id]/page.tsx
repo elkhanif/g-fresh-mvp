@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { Icon, categoryIcon } from '@/components/ui/Icon';
 import { requireRole } from '@/lib/rbac';
 import { prisma } from '@/lib/db';
 import { getActiveHet } from '@/lib/het';
@@ -9,7 +10,7 @@ import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { CertBadge } from '@/components/CertBadge';
 import { PerfBadge } from '@/components/PerfBadge';
-import { ProductOrderForm } from '@/components/forms/ProductOrderForm';
+import { AddToCart } from '@/components/forms/AddToCart';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,16 +34,26 @@ export default async function ProductDetail({ params }: { params: { id: string }
   if (!p) notFound();
   const het = await getActiveHet(p.categoryId);
   const subsidi = subsidyPercent(p.producer.ratingScore);
+  // Badge "panen segar" di poster: klaimnya dibatasi 24 jam supaya tidak
+  // menempel selamanya pada produk lama.
+  const segar = Date.now() - p.harvestedAt.getTime() < 24 * 60 * 60 * 1000;
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <div>
-        {p.photoUrl && (
-          <div className="mb-4 aspect-[4/3] w-full overflow-hidden rounded-xl bg-leaf-50">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+        <div className="relative mb-4 aspect-[4/3] w-full overflow-hidden rounded-xl bg-leaf-50">
+          {p.photoUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
             <img src={p.photoUrl} alt={p.name} className="h-full w-full object-cover" />
-          </div>
-        )}
+          ) : (
+            <div className="flex h-full items-center justify-center text-leaf-300"><Icon name={categoryIcon(p.category.name)} size={72} /></div>
+          )}
+          {segar && (
+            <span className="absolute bottom-3 left-3 rounded-full bg-white/95 px-3 py-1 text-xs font-medium text-leaf-700 shadow-sm">
+              ✓ Panen segar hari ini
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <Badge>{p.category.name}</Badge>
           <CertBadge status={p.producer.certStatus} type={p.producer.certType} />
@@ -75,18 +86,25 @@ export default async function ProductDetail({ params }: { params: { id: string }
       <div>
         <Card>
           <h2 className="mb-3 font-semibold">Pesan</h2>
-          <ProductOrderForm
-            productId={p.id}
-            price={p.price}
-            unit={p.unit}
-            maxStock={p.stock}
-            defaultAddress={account?.defaultAddress ?? ''}
-            subsidyPct={subsidi}
-            b2bPrice={p.b2bPrice}
-            b2bMinQty={p.b2bMinQty}
-            b2bEligible={!!account?.business?.verified}
-            billingAddress={account?.business?.billingAddress ?? ''}
+          <AddToCart
+            item={{
+              productId: p.id,
+              name: p.name,
+              unit: p.unit,
+              price: p.price,
+              b2bPrice: p.b2bPrice,
+              b2bMinQty: p.b2bMinQty,
+              stock: p.stock,
+              photoUrl: p.photoUrl,
+              producerId: p.producerId,
+              producerName: p.producer.farmName,
+            }}
           />
+          {subsidi > 0 && (
+            <p className="mt-3 rounded-lg bg-leaf-50 px-3 py-2 text-xs text-leaf-800">
+              Produsen berkinerja baik — Anda dapat subsidi ongkir {subsidi}% untuk pesanan ini.
+            </p>
+          )}
           <p className="mt-3 text-xs text-ink/50">
             Setelah bayar, dana ditahan sistem (escrow) dan baru diteruskan ke produsen setelah Anda
             menerima pesanan dan masa garansi 2 jam berlalu tanpa komplain.

@@ -1,9 +1,13 @@
 import { cn } from '@/lib/utils';
 
-type Variant = 'primary' | 'ghost' | 'danger' | 'outline';
+type Variant = 'primary' | 'cta' | 'ghost' | 'danger' | 'outline';
 
 const styles: Record<Variant, string> = {
   primary: 'bg-leaf-600 text-white hover:bg-leaf-700 disabled:opacity-50',
+  // Aksi puncak pada sebuah layar (checkout, konfirmasi terima). Oranye
+  // dipilih bukan cuma karena palet poster: hijau di atas putih sering luntur
+  // saat diproyeksikan di ruangan terang, oranye tetap terbaca.
+  cta: 'bg-accent-500 text-white hover:bg-accent-600 disabled:opacity-50',
   outline: 'border border-leaf-600 text-leaf-700 hover:bg-leaf-50',
   ghost: 'text-leaf-700 hover:bg-leaf-100',
   danger: 'bg-red-600 text-white hover:bg-red-700 disabled:opacity-50',

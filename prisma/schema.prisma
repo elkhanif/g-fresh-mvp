@@ -59,17 +59,51 @@ model ProducerProfile {
   // Sertifikasi diverifikasi MANUAL oleh dinas pada fase pilot.
   certStatus  CertStatus        @default(BELUM_DIAJUKAN)
   certType    String? // "Halal" | "P-IRT" | "BPOM"
-  certNote    String?
+  certNote    String? // catatan/alasan keputusan terakhir dinas
+  // Bukti sertifikat yang diajukan produsen. Nomor wajib saat mengajukan;
+  // dokumen (scan/foto/PDF) opsional — banyak produsen kecil belum punya
+  // salinan digital, dan memaksakannya akan mengunci mereka dari sistem.
+  certNumber      String?
+  certIssuer      String? // penerbit: Dinkes, BPJPH, BPOM, dst
+  certIssuedAt    DateTime?
+  certExpiresAt   DateTime? // P-IRT 5 th, Halal 4 th — dipantau cron
+  certDocUrl      String?
+  certSubmittedAt DateTime?
+  certReviewedAt  DateTime?
+  certReviews     CertReview[]
   ratingScore Float             @default(5)
   products    Product[]
   createdAt   DateTime          @default(now())
 }
 
+// Jejak keputusan sertifikasi. Append-only: setiap pengajuan, verifikasi,
+// permintaan perbaikan, penolakan, dan pencabutan menghasilkan satu baris.
+// Ini keputusan instansi pemerintah yang menutup/membuka akses ekonomi
+// seseorang — nilai akhirnya saja tidak cukup, harus bisa ditelusuri.
+model CertReview {
+  id         String   @id @default(cuid())
+  producerId String
+  producer   ProducerProfile @relation(fields: [producerId], references: [id], onDelete: Cascade)
+  fromStatus CertStatus
+  toStatus   CertStatus
+  certType   String?
+  certNumber String?
+  note       String?
+  actorId    String? // null = sistem (mis. penandaan kedaluwarsa oleh cron)
+  actorName  String? // disalin saat kejadian; nama petugas tetap terbaca
+  createdAt  DateTime @default(now())
+
+  @@index([producerId, createdAt])
+}
+
 enum CertStatus {
   BELUM_DIAJUKAN
   MENUNGGU_VERIFIKASI
+  MENUNGGU_PERBAIKAN // dikembalikan ke produsen dengan catatan perbaikan
   TERVERIFIKASI
   DITOLAK
+  KEDALUWARSA // masa berlaku lewat; ditandai otomatis oleh cron
+  DICABUT // dicabut dinas setelah sempat terbit
 }
 
 model CourierProfile {
@@ -222,11 +256,67 @@ model Product {
   photoUrl    String?
   active      Boolean         @default(true)
   orderItems  OrderItem[]
+  priceHistory   PriceHistory[]
+  stockMovements StockMovement[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
   @@index([categoryId])
   @@index([producerId])
+}
+
+// ------------------------------------------------------------------
+// Riwayat harga & mutasi stok — produsen mengubah produk yang sudah tayang
+// ------------------------------------------------------------------
+
+// Setiap perubahan harga DICATAT, bukan menimpa. Alasan desain: harga pangan
+// itu data yang diawasi (HET, dugaan permainan harga), jadi yang penting
+// bukan cuma nilai terakhir tapi jejak perubahannya.
+model PriceHistory {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  oldPrice    Int
+  newPrice    Int
+  oldB2bPrice Int?
+  newB2bPrice Int?
+  // Snapshot HET yang berlaku SAAT perubahan. HET bisa berubah kemudian dan
+  // membuat harga lama terlihat "melanggar" padahal saat itu sah.
+  hetMaxAt    Int?
+  hetFloorAt  Int?
+  note        String?
+  actorId     String? // produsen yang mengubah; null = sistem/seed
+  createdAt   DateTime @default(now())
+
+  @@index([productId, createdAt])
+}
+
+// Alasan mutasi stok. Empat pertama dipilih produsen secara manual;
+// PENJUALAN_APP hanya ditulis sistem saat checkout mereservasi stok.
+enum StockReason {
+  RESTOCK // panen / pasok baru masuk
+  TERJUAL_MANUAL // terjual di luar aplikasi (pasar, langganan langsung)
+  RUSAK // susut / busuk / rusak
+  KOREKSI // pembetulan salah input
+  PENJUALAN_APP // otomatis: reservasi stok saat checkout
+}
+
+// Buku besar stok: stok produk = hasil akumulasi mutasi ini. Disimpan
+// eksplisit (before/after) supaya selisih terlihat walau ada koreksi manual.
+model StockMovement {
+  id        String      @id @default(cuid())
+  productId String
+  product   Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  delta     Int // positif = masuk, negatif = keluar
+  before    Int
+  after     Int
+  reason    StockReason
+  note      String?
+  orderId   String? // diisi untuk PENJUALAN_APP
+  actorId   String? // null = sistem
+  createdAt DateTime    @default(now())
+
+  @@index([productId, createdAt])
 }
 
 // ------------------------------------------------------------------

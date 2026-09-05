@@ -1,4 +1,5 @@
 'use client';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -7,8 +8,8 @@ type Notif = {
   href: string | null; readAt: string | null; createdAt: string;
 };
 
-const KIND_ICON: Record<string, string> = {
-  ORDER: '📦', KOMPLAIN: '⚠️', AKUN: '👤', TAGIHAN: '🧾',
+const KIND_ICON: Record<string, IconName> = {
+  ORDER: 'box', KOMPLAIN: 'alert', AKUN: 'user', TAGIHAN: 'receipt',
 };
 
 function waktuLalu(iso: string) {
@@ -79,9 +80,9 @@ export function NotificationBell() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label="Notifikasi"
-        className="relative rounded-lg px-2 py-1.5 text-lg hover:bg-leaf-100"
+        className="relative rounded-lg p-2 text-ink/60 hover:bg-leaf-50 hover:text-leaf-700"
       >
-        🔔
+        <Icon name="bell" size={21} />
         {unread > 0 && (
           <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
             {unread > 9 ? '9+' : unread}
@@ -113,7 +114,9 @@ export function NotificationBell() {
                     (n.readAt ? '' : 'bg-leaf-50/60')
                   }
                 >
-                  <span className="pt-0.5">{KIND_ICON[n.kind] ?? '🔔'}</span>
+                  <span className="pt-0.5 text-ink/45">
+                    <Icon name={KIND_ICON[n.kind] ?? 'bell'} size={18} />
+                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5">
                       <span className={'text-sm ' + (n.readAt ? 'text-ink/80' : 'font-semibold')}>

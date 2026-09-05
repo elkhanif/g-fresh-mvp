@@ -1,77 +1,72 @@
 import Link from 'next/link';
 import { requireUser } from '@/lib/rbac';
+import { prisma } from '@/lib/db';
 import { Providers } from '@/components/Providers';
 import { SignOutButton } from '@/components/SignOutButton';
 import { NotificationBell } from '@/components/NotificationBell';
-import type { Role } from '@prisma/client';
-
-const NAV: Record<Role, { href: string; label: string }[]> = {
-  PRODUSEN: [
-    { href: '/app/produsen', label: 'Produk' },
-    { href: '/app/produsen/pesanan', label: 'Pesanan masuk' },
-    { href: '/app/produsen/komplain', label: 'Komplain' },
-  ],
-  KONSUMEN: [
-    { href: '/app/konsumen', label: 'Belanja' },
-    { href: '/app/konsumen/pesanan', label: 'Pesanan saya' },
-    { href: '/app/konsumen/scan', label: 'Scan QR' },
-    { href: '/app/konsumen/bisnis', label: 'Akun bisnis' },
-  ],
-  KURIR: [
-    { href: '/app/kurir', label: 'Tugas kurir' },
-    { href: '/app/kurir/riwayat', label: 'Riwayat & pendapatan' },
-    { href: '/app/kurir/verifikasi', label: 'Verifikasi KTP' },
-  ],
-  ADMIN: [
-    { href: '/app/admin', label: 'Operasional' },
-    { href: '/app/admin/riwayat', label: 'Riwayat' },
-  ],
-  PEMKAB: [
-    { href: '/app/pemkab', label: 'Dashboard Pemkab' },
-    { href: '/app/pemkab/produsen', label: 'Direktori produsen' },
-  ],
-};
+import { CartProvider } from '@/lib/cart';
+import { CartLink } from '@/components/CartLink';
+import { BottomNav } from '@/components/BottomNav';
+import { NAV, NAV_BISNIS } from '@/lib/nav';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const nav = NAV[user.role];
 
+  // Menu "Akun bisnis" hanya muncul bila konsumen memang punya profil usaha —
+  // sebelumnya selalu tampil dan membingungkan pembeli rumah tangga.
+  const punyaBisnis =
+    user.role === 'KONSUMEN'
+      ? !!(await prisma.businessProfile.findUnique({
+          where: { userId: user.id },
+          select: { id: true },
+        }))
+      : false;
+  const navHeader = punyaBisnis ? [...nav.slice(0, -1), NAV_BISNIS, nav[nav.length - 1]] : nav;
+
   return (
     <Providers>
-      <div className="min-h-screen">
-        <header className="sticky top-0 z-10 border-b border-leaf-100 bg-white/90 backdrop-blur">
-          <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-3">
-            <div className="flex items-center gap-6">
-              <Link href="/app" className="font-bold text-leaf-700">G-Fresh</Link>
-              <nav className="hidden gap-4 sm:flex">
-                {nav.map((n) => (
-                  <Link key={n.href} href={n.href} className="text-sm text-ink/70 hover:text-leaf-700">
-                    {n.label}
-                  </Link>
-                ))}
-              </nav>
+      <CartProvider>
+        <div className="min-h-screen">
+          <header className="sticky top-0 z-10 border-b border-leaf-100 bg-white/90 backdrop-blur">
+            <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-5 py-2.5">
+              <div className="flex items-center gap-6">
+                <Link href="/app" className="flex items-center" aria-label="G-Fresh">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/logo.svg" alt="G-Fresh" className="h-7 w-auto" />
+                </Link>
+                <nav className="hidden gap-4 sm:flex">
+                  {navHeader.map((n) => (
+                    <Link
+                      key={n.href}
+                      href={n.href}
+                      className="text-sm text-ink/70 hover:text-leaf-700"
+                    >
+                      {n.label}
+                    </Link>
+                  ))}
+                </nav>
+              </div>
+              <div className="flex items-center gap-1">
+                {user.role === 'KONSUMEN' && <CartLink />}
+                <NotificationBell />
+                <Link
+                  href="/app/akun"
+                  className="hidden px-2 text-sm text-ink/70 hover:text-leaf-700 sm:inline"
+                >
+                  {user.name}
+                </Link>
+                <SignOutButton />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <NotificationBell />
-              <Link href="/app/akun" className="hidden text-sm text-ink/70 hover:text-leaf-700 sm:inline">
-                {user.name}
-              </Link>
-              <Link href="/app/akun" className="text-sm text-ink/70 hover:text-leaf-700 sm:hidden">
-                Akun
-              </Link>
-              <SignOutButton />
-            </div>
-          </div>
-          <nav className="flex gap-4 overflow-x-auto px-5 pb-2 sm:hidden">
-            {nav.map((n) => (
-              <Link key={n.href} href={n.href} className="whitespace-nowrap text-sm text-ink/70">
-                {n.label}
-              </Link>
-            ))}
-          </nav>
-        </header>
-        <div className="mx-auto max-w-5xl px-5 py-6">{children}</div>
-      </div>
+          </header>
+
+          {/* pb-24 di mobile memberi ruang untuk bottom nav yang melayang */}
+          <div className="mx-auto max-w-5xl px-5 pb-24 pt-6 sm:pb-6">{children}</div>
+
+          <BottomNav items={nav} />
+        </div>
+      </CartProvider>
     </Providers>
   );
 }

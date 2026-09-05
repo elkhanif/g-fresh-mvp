@@ -37,6 +37,12 @@ export async function uploadImages(files: IncomingFile[], subdir = 'products'): 
   return uploadMany(files, subdir, IMAGE_EXT);
 }
 
+// Dokumen bukti (salinan sertifikat): gambar ATAU PDF. Banyak produsen kecil
+// memotret sertifikatnya dengan HP, bukan memindai — jadi jangan batasi ke PDF.
+export async function uploadDocuments(files: IncomingFile[], subdir = 'docs'): Promise<string[]> {
+  return uploadMany(files, subdir, { ...IMAGE_EXT, 'application/pdf': 'pdf' });
+}
+
 async function uploadMany(
   files: IncomingFile[],
   subdir: string,

@@ -10,7 +10,13 @@
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "demo:up": "docker compose -f docker-compose.demo.yml up -d",
+    "demo:down": "docker compose -f docker-compose.demo.yml down",
+    "demo:reset": "docker compose -f docker-compose.demo.yml down -v",
+    "demo:setup": "prisma db push && prisma generate && tsx prisma/seed.ts",
+    "demo:build": "next build",
+    "demo:start": "next start -p 3000"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

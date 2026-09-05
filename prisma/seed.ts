@@ -101,6 +101,9 @@ async function main() {
   await prisma.orderEvent.deleteMany({});
   await prisma.orderItem.deleteMany({});
   await prisma.order.deleteMany({});
+  await prisma.certReview.deleteMany({});
+  await prisma.stockMovement.deleteMany({}); // ikut cascade dari Product, dihapus eksplisit biar jelas
+  await prisma.priceHistory.deleteMany({});
   await prisma.product.deleteMany({});
   await prisma.hetPrice.deleteMany({}); // HetPrice.setBy → User tanpa cascade, harus lebih dulu
   await prisma.user.deleteMany({});     // cascade ke ProducerProfile/CourierProfile/BusinessProfile/Notification
@@ -171,7 +174,51 @@ async function main() {
       },
     });
   }
-  console.log(`› HET ditetapkan untuk ${Object.keys(HET).length} kategori`);
+  // HET periode sebelumnya (120 hari lalu, sedikit lebih longgar). Tanpa ini
+  // garis HET di grafik pantauan cuma muncul mulai hari ini.
+  const hetLama = new Date(today.getTime() - 120 * 86_400_000);
+  for (const [name, v] of Object.entries(HET)) {
+    await prisma.hetPrice.upsert({
+      where: { categoryId_effectiveOn: { categoryId: cat[name].id, effectiveOn: hetLama } },
+      update: {},
+      create: {
+        categoryId: cat[name].id,
+        maxPrice: Math.round((v.max * 1.08) / 500) * 500,
+        floorPrice: v.floor ?? null,
+        effectiveOn: hetLama,
+        setById: pemkab.id,
+      },
+    });
+  }
+  console.log(`› HET ditetapkan untuk ${Object.keys(HET).length} kategori (2 periode)`);
+
+
+// --- Foto produk ---------------------------------------------------------
+// Foto dicocokkan dari nama produk ke berkas di public/img/produk/.
+// Sengaja memeriksa keberadaan berkas, bukan menebak: dengan begitu foto bisa
+// dicicil sedikit demi sedikit — yang belum ada jatuh ke placeholder, dan
+// tidak ada gambar rusak di katalog.
+const FOTO_DIR = path.join(process.cwd(), 'public', 'img', 'produk');
+const FOTO_EXT = ['.jpg', '.jpeg', '.png', '.webp'];
+
+function slugProduk(nama: string) {
+  return nama
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function fotoProduk(nama: string): string | null {
+  const slug = slugProduk(nama);
+  for (const ext of FOTO_EXT) {
+    if (fs.existsSync(path.join(FOTO_DIR, slug + ext))) {
+      return `/img/produk/${slug}${ext}`;
+    }
+  }
+  return null;
+}
 
   // ---------------------------------------------------------------- Produsen
   type SeedProducer = {
@@ -294,6 +341,11 @@ async function main() {
         harvestedAt: hoursAgo(pr.panenJamLalu),
         b2bPrice: pr.b2bPrice ?? null,
         b2bMinQty: pr.b2bMinQty ?? null,
+        photoUrl: fotoProduk(pr.name),
+        // Dimundurkan ~4 bulan supaya pantauan harga Pemkab punya rentang
+        // untuk dihitung. Produk yang createdAt-nya hari ini akan membuat
+        // seluruh grafik historis kosong.
+        createdAt: hoursAgo(24 * 130),
       };
       if (existing) await prisma.product.update({ where: { id: existing.id }, data });
       else await prisma.product.create({ data });
@@ -301,6 +353,255 @@ async function main() {
   }
   const totalProduk = PRODUSEN.reduce((a, p) => a + p.products.length, 0);
   console.log(`› ${PRODUSEN.length} produsen & ${totalProduk} produk siap`);
+
+  // ------------------------------------------------ Sertifikasi & jejak audit
+  // Tanpa ini panel dinas cuma punya status telanjang: tidak ada nomor, masa
+  // berlaku, maupun riwayat keputusan — persis kondisi yang diperbaiki di
+  // batch #14. Satu produsen sengaja dibuat hampir kedaluwarsa dan satu lagi
+  // berstatus perlu perbaikan supaya tiap tab panel ada isinya.
+  const daysAhead = (n: number) => new Date(Date.now() + n * 86_400_000);
+  const petugas = await prisma.user.findFirst({ where: { role: 'PEMKAB' } });
+  const semuaProdusen = await prisma.producerProfile.findMany({ orderBy: { createdAt: 'asc' } });
+
+  let ke = 0;
+  for (const p of semuaProdusen) {
+    ke += 1;
+    const nomor = `20635${String(250000 + ke * 137).slice(0, 6)}-${20 + ke}`;
+    const penerbit =
+      p.certType === 'Halal'
+        ? 'BPJPH / LPH'
+        : p.certType === 'BPOM'
+          ? 'BPOM RI'
+          : 'Dinas Kesehatan Kab. Gresik';
+
+    if (p.certStatus === 'TERVERIFIKASI') {
+      const hampirHabis = ke === 2; // satu contoh yang segera kedaluwarsa
+      await prisma.producerProfile.update({
+        where: { id: p.id },
+        data: {
+          certNumber: nomor,
+          certIssuer: penerbit,
+          certIssuedAt: hoursAgo(24 * 400),
+          certExpiresAt: hampirHabis ? daysAhead(25) : daysAhead(900),
+          certSubmittedAt: hoursAgo(24 * 40),
+          certReviewedAt: hoursAgo(24 * 38),
+        },
+      });
+      await prisma.certReview.createMany({
+        data: [
+          {
+            producerId: p.id,
+            fromStatus: 'BELUM_DIAJUKAN',
+            toStatus: 'MENUNGGU_VERIFIKASI',
+            certType: p.certType,
+            certNumber: nomor,
+            note: 'Pengajuan oleh produsen',
+            actorName: 'Produsen',
+            createdAt: hoursAgo(24 * 40),
+          },
+          {
+            producerId: p.id,
+            fromStatus: 'MENUNGGU_VERIFIKASI',
+            toStatus: 'TERVERIFIKASI',
+            certType: p.certType,
+            certNumber: nomor,
+            note: 'Nomor sertifikat dicocokkan ke penerbit, sesuai.',
+            actorId: petugas?.id ?? null,
+            actorName: petugas?.name ?? 'Dinas',
+            createdAt: hoursAgo(24 * 38),
+          },
+        ],
+      });
+    } else if (p.certStatus === 'MENUNGGU_VERIFIKASI') {
+      await prisma.producerProfile.update({
+        where: { id: p.id },
+        data: {
+          certType: p.certType ?? 'P-IRT',
+          certNumber: nomor,
+          certIssuer: penerbit,
+          certIssuedAt: hoursAgo(24 * 120),
+          certExpiresAt: daysAhead(700),
+          certSubmittedAt: hoursAgo(30),
+        },
+      });
+      await prisma.certReview.create({
+        data: {
+          producerId: p.id,
+          fromStatus: 'BELUM_DIAJUKAN',
+          toStatus: 'MENUNGGU_VERIFIKASI',
+          certType: p.certType ?? 'P-IRT',
+          certNumber: nomor,
+          note: 'Pengajuan oleh produsen',
+          actorName: 'Produsen',
+          createdAt: hoursAgo(30),
+        },
+      });
+    } else if (p.certStatus === 'BELUM_DIAJUKAN' && ke % 3 === 0) {
+      // Contoh berkas yang dikembalikan dinas untuk diperbaiki.
+      await prisma.producerProfile.update({
+        where: { id: p.id },
+        data: {
+          certStatus: 'MENUNGGU_PERBAIKAN',
+          certType: 'P-IRT',
+          certNumber: nomor,
+          certIssuer: penerbit,
+          certSubmittedAt: hoursAgo(72),
+          certReviewedAt: hoursAgo(50),
+          certNote: 'Foto sertifikat buram, nomor tidak terbaca. Mohon unggah ulang.',
+        },
+      });
+      await prisma.certReview.createMany({
+        data: [
+          {
+            producerId: p.id,
+            fromStatus: 'BELUM_DIAJUKAN',
+            toStatus: 'MENUNGGU_VERIFIKASI',
+            certType: 'P-IRT',
+            certNumber: nomor,
+            note: 'Pengajuan oleh produsen',
+            actorName: 'Produsen',
+            createdAt: hoursAgo(72),
+          },
+          {
+            producerId: p.id,
+            fromStatus: 'MENUNGGU_VERIFIKASI',
+            toStatus: 'MENUNGGU_PERBAIKAN',
+            certType: 'P-IRT',
+            certNumber: nomor,
+            note: 'Foto sertifikat buram, nomor tidak terbaca. Mohon unggah ulang.',
+            actorId: petugas?.id ?? null,
+            actorName: petugas?.name ?? 'Dinas',
+            createdAt: hoursAgo(50),
+          },
+        ],
+      });
+    }
+  }
+  console.log('› data sertifikasi & riwayat keputusan dibuat');
+
+  // ------------------------------------------------- Buku besar stok & harga
+  // Produk seed dibuat langsung di level data, jadi tanpa baris ini buku besar
+  // StockMovement kosong padahal stok terisi — riwayat yang tidak nyambung
+  // dengan angkanya. Satu baris RESTOCK per produk bikin akumulasi mutasi
+  // sama dengan stok saat ini.
+  const produkLedger = await prisma.product.findMany({
+    select: { id: true, stock: true, price: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  await prisma.stockMovement.createMany({
+    data: produkLedger.map((p) => ({
+      productId: p.id,
+      delta: p.stock,
+      before: 0,
+      after: p.stock,
+      reason: 'RESTOCK' as const,
+      note: 'Stok awal (data demo)',
+      createdAt: hoursAgo(30),
+    })),
+  });
+
+  // Beberapa mutasi & perubahan harga demo supaya panel "Riwayat" di halaman
+  // produsen tidak kosong saat dipresentasikan.
+  const demo = produkLedger.slice(0, 3);
+  if (demo[1]) {
+    // Susut 2 satuan: stok produk ikut dikurangi supaya buku besar tetap konsisten.
+    const susut = Math.min(2, demo[1].stock);
+    if (susut > 0) {
+      await prisma.product.update({
+        where: { id: demo[1].id },
+        data: { stock: { decrement: susut } },
+      });
+      await prisma.stockMovement.create({
+        data: {
+          productId: demo[1].id,
+          delta: -susut,
+          before: demo[1].stock,
+          after: demo[1].stock - susut,
+          reason: 'RUSAK',
+          note: 'Kena hujan saat pengangkutan (data demo)',
+          createdAt: hoursAgo(8),
+        },
+      });
+    }
+  }
+  if (demo[2]) {
+    await prisma.stockMovement.create({
+      data: {
+        productId: demo[2].id,
+        delta: 5,
+        before: demo[2].stock,
+        after: demo[2].stock + 5,
+        reason: 'RESTOCK',
+        note: 'Panen sore tambahan (data demo)',
+        createdAt: hoursAgo(4),
+      },
+    });
+    await prisma.product.update({
+      where: { id: demo[2].id },
+      data: { stock: { increment: 5 } },
+    });
+  }
+  console.log('› buku besar stok & riwayat harga demo dibuat');
+
+  // ------------------------------------------- Riwayat harga 90 hari (demo)
+  // Halaman pantauan harga Pemkab merekonstruksi harga historis dari
+  // PriceHistory — tidak ada tabel snapshot harian. Tanpa riwayat, grafiknya
+  // jadi garis datar: benar secara teknis, tapi tidak menunjukkan apa pun.
+  // Di sini dibuat pergerakan sintetis yang tetap patuh HET.
+  //
+  // Rantainya dibangun MUNDUR dari harga sekarang: newPrice perubahan terbaru
+  // harus sama persis dengan harga produk saat ini, dan oldPrice tiap
+  // perubahan jadi newPrice perubahan sebelumnya. Kalau rantai ini putus,
+  // rekonstruksi di price-monitor.ts menghasilkan lompatan palsu.
+  let benih = 20260905; // PRNG deterministik: data demo harus sama tiap seed
+  const acak = () => {
+    benih = (benih * 1103515245 + 12345) % 2147483648;
+    return benih / 2147483648;
+  };
+
+  const hetPerKat = new Map<string, { max: number; floor: number | null }>();
+  for (const [name, v] of Object.entries(HET)) {
+    hetPerKat.set(cat[name].id, { max: v.max, floor: v.floor ?? null });
+  }
+
+  const produkHarga = await prisma.product.findMany({
+    select: { id: true, price: true, categoryId: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const barisHarga: Array<Record<string, unknown>> = [];
+  produkHarga.forEach((p, i) => {
+    const het = hetPerKat.get(p.categoryId);
+    const jumlah = 2 + Math.floor(acak() * 4); // 2–5 perubahan per produk
+    const hariLalu = Array.from(
+      new Set(Array.from({ length: jumlah }, () => 4 + Math.floor(acak() * 84))),
+    ).sort((a, b) => a - b); // terbaru dulu, karena kita berjalan mundur
+
+    let sesudah = p.price;
+    hariLalu.forEach((hari, idx) => {
+      // Dua produk sengaja diberi lonjakan tajam supaya panel "Kenaikan
+      // mendadak" ada isinya saat demo.
+      const faktor = idx === 0 && (i === 0 || i === 5) ? 0.8 : 0.9 + acak() * 0.16;
+      let sebelum = Math.round((sesudah * faktor) / 100) * 100;
+      if (het) sebelum = Math.min(het.max, Math.max(het.floor ?? 500, sebelum));
+      if (sebelum === sesudah) return;
+      barisHarga.push({
+        productId: p.id,
+        oldPrice: sebelum,
+        newPrice: sesudah,
+        hetMaxAt: het?.max ?? null,
+        hetFloorAt: het?.floor ?? null,
+        note: 'Penyesuaian harga (data demo)',
+        createdAt: hoursAgo(24 * hari),
+      });
+      sesudah = sebelum;
+    });
+  });
+
+  if (barisHarga.length) {
+    await prisma.priceHistory.createMany({ data: barisHarga as never });
+  }
+  console.log(`› ${barisHarga.length} perubahan harga historis dibuat (90 hari)`);
 
   // ---------------------------------------------------------------- Kurir
   // ktpState: 'verified' = sudah disetujui admin (ada NIK + foto).

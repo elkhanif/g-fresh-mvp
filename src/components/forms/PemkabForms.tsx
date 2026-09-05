@@ -55,26 +55,7 @@ export function HetForm({ categories }: { categories: Cat[] }) {
   );
 }
 
-export function CertVerifyForm({ producerId, currentType }: { producerId: string; currentType?: string | null }) {
-  const router = useRouter();
-  const [type, setType] = useState(currentType ?? 'P-IRT');
-  const [loading, setLoading] = useState('');
-  async function decide(status: 'TERVERIFIKASI' | 'DITOLAK') {
-    setLoading(status);
-    await fetch('/api/cert', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ producerId, status, certType: type }),
-    });
-    setLoading('');
-    router.refresh();
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Select value={type} onChange={(e) => setType(e.target.value)} className="w-32">
-        <option>P-IRT</option><option>Halal</option><option>BPOM</option>
-      </Select>
-      <Button onClick={() => decide('TERVERIFIKASI')} disabled={!!loading}>Verifikasi</Button>
-      <Button variant="outline" onClick={() => decide('DITOLAK')} disabled={!!loading}>Tolak</Button>
-    </div>
-  );
-}
+// CertVerifyForm dihapus pada batch #14. Keputusan sertifikasi kini ditangani
+// CertReviewPanel: aksi sadar-status, alasan wajib, dan jejak audit. Dua jalur
+// yang menulis status yang sama akan saling melangkahi, jadi yang lama dibuang
+// alih-alih dibiarkan menganggur.
