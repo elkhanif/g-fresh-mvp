@@ -1,5 +1,6 @@
 import { OrderStatus, EscrowStatus } from '@prisma/client';
 import { prisma } from './db';
+import { kreditOngkir } from './wallet';
 import { releaseFunds, refundFunds } from './providers/payment';
 import { computeRating } from './rating';
 import { notify, userIdOfProducer, userIdOfCourier } from './notification';
@@ -183,6 +184,11 @@ export async function transitionOrder(
         await releaseFunds(order.paymentRef);
       }
       data.escrowStatus = EscrowStatus.RELEASED;
+      // Upah antar masuk ke dompet kurir. Aman dipanggil berulang: baris
+      // ongkir per order dijaga unique di basis data.
+      if (order.courierId) {
+        await kreditOngkir(order.courierId, order.id, order.deliveryFee);
+      }
     }
 
     if (to === 'REFUND' || to === 'DIBATALKAN') {

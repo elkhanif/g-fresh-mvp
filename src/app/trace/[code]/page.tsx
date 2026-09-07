@@ -23,7 +23,7 @@ export default async function TracePage({ params }: { params: { code: string } }
     ? await prisma.orderItem.findUnique({
         where: { traceCode: code },
         include: {
-          product: { include: { category: true, producer: true } },
+          product: { include: { category: true, producer: { include: { market: true } } } },
           order: { select: { createdAt: true, status: true } },
         },
       })
@@ -104,11 +104,19 @@ export default async function TracePage({ params }: { params: { code: string } }
           <div>
             <p className="mb-2 text-sm font-medium">Rantai pasok</p>
             <div className="flex items-center justify-between gap-1 rounded-lg border border-leaf-100 px-3 py-3 text-center text-xs">
-              {([
-                { ikon: 'leaf', label: 'Produsen' },
-                { ikon: 'truck', label: 'Kurir' },
-                { ikon: 'home', label: 'Anda' },
-              ] as const).map((n, i, arr) => (
+              {(item.product.producer.sellerType === 'PASAR'
+                ? ([
+                    { ikon: 'leaf', label: 'Produsen' },
+                    { ikon: 'store', label: 'Kios' },
+                    { ikon: 'truck', label: 'Kurir' },
+                    { ikon: 'home', label: 'Anda' },
+                  ] as const)
+                : ([
+                    { ikon: 'leaf', label: 'Produsen' },
+                    { ikon: 'truck', label: 'Kurir' },
+                    { ikon: 'home', label: 'Anda' },
+                  ] as const)
+              ).map((n, i, arr) => (
                 <div key={n.label} className="flex flex-1 items-center gap-1">
                   <div className="flex-1">
                     <div className="flex justify-center text-leaf-600">
@@ -121,7 +129,11 @@ export default async function TracePage({ params }: { params: { code: string } }
               ))}
             </div>
             <p className="mt-1 text-xs text-ink/45">
-              Simpul kios pasar belum ditampilkan — produk ini datang langsung dari produsen.
+              {item.product.producer.sellerType === 'PASAR'
+                ? `Dijual di ${item.product.producer.kioskName ?? 'kios'}${
+                    item.product.producer.market ? ` — ${item.product.producer.market.name}` : ''
+                  }.`
+                : 'Produk ini datang langsung dari produsen, tanpa perantara kios.'}
             </p>
           </div>
 

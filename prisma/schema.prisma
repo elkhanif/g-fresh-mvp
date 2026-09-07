@@ -46,12 +46,42 @@ model User {
   @@index([role])
 }
 
+/// Tipe penjual. Membedakan dua jalur pasok di poster: pedagang pasar
+/// tradisional yang terdaftar Diskoperindag, versus petani/petambak yang
+/// menjual langsung dari lahan.
+enum SellerType {
+  TANI // lumbung tani & tambak — direct farm-to-table
+  PASAR // pedagang kios di pasar rakyat
+}
+
+/// Pasar rakyat Kabupaten Gresik. Daftar awalnya mengikuti tujuh pasar yang
+/// terdaftar di portal SIBAPO Diskoperindag, sehingga `slug` bisa dipakai
+/// sebagai tujuan deep-link dari portal tersebut: /pasar/giri.
+model Market {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  kecamatan String
+  address   String
+  latitude  Float?
+  longitude Float?
+  active    Boolean  @default(true)
+  producers ProducerProfile[]
+  createdAt DateTime @default(now())
+}
+
 model ProducerProfile {
   id          String            @id @default(cuid())
   userId      String            @unique
   user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   farmName    String
   kecamatan   String
+  // Jalur pasok penjual ini. Pedagang pasar mengisi `market` + `kioskName`;
+  // petani/petambak membiarkannya kosong.
+  sellerType  SellerType        @default(TANI)
+  marketId    String?
+  market      Market?           @relation(fields: [marketId], references: [id])
+  kioskName   String? // mis. "Kios Bu Siti - Blok A"
   // Koordinat lokasi produksi. Disimpan penuh untuk pickup kurir,
   // tapi HANYA level kecamatan yang diekspos ke publik (privasi produsen).
   latitude    Float?
@@ -123,7 +153,57 @@ model CourierProfile {
   active      Boolean  @default(true)
   ratingScore Float    @default(5)
   orders      Order[]  @relation("CourierOrders")
+  wallet      WalletTx[]
+  toolkit     ToolkitPlan?
   createdAt   DateTime @default(now())
+}
+
+enum WalletTxKind {
+  ONGKIR // upah antar, masuk saat pesanan selesai
+  POTONGAN_ALAT // angsuran harian coolbox
+  PENARIKAN // ditarik kurir ke rekening
+  PENYESUAIAN // koreksi manual admin
+}
+
+/// Buku besar dompet kurir. Append-only: SALDO TIDAK DISIMPAN sebagai kolom,
+/// melainkan hasil penjumlahan seluruh baris. Menyimpan saldo sekaligus
+/// riwayatnya berarti dua sumber kebenaran untuk uang yang sama — dan itu
+/// cara tercepat menciptakan selisih yang tidak bisa dijelaskan.
+model WalletTx {
+  id        String       @id @default(cuid())
+  courierId String
+  courier   CourierProfile @relation(fields: [courierId], references: [id], onDelete: Cascade)
+  kind      WalletTxKind
+  amount    Int // positif = masuk, negatif = keluar
+  note      String?
+  orderId   String? // diisi untuk ONGKIR
+  createdAt DateTime     @default(now())
+
+  // Satu order hanya boleh menghasilkan satu baris ongkir. Penjaga di level
+  // basis data, bukan cuma di kode: kalau cron berjalan dua kali, baris kedua
+  // ditolak Postgres alih-alih menggandakan upah.
+  @@unique([orderId, kind])
+  @@index([courierId, createdAt])
+}
+
+/// Skema perlengkapan kerja (coolbox): dibayar bertahap lewat potongan harian
+/// dari dompet, bukan pinjaman tunai. Setelah lunas, alat jadi milik kurir.
+model ToolkitPlan {
+  id           String   @id @default(cuid())
+  courierId    String   @unique
+  courier      CourierProfile @relation(fields: [courierId], references: [id], onDelete: Cascade)
+  itemName     String   @default("Coolbox G-Fresh")
+  totalAmount  Int      @default(350000)
+  dailyAmount  Int      @default(10000)
+  tenorDays    Int      @default(35)
+  paidDays     Int      @default(0)
+  // Potongan hanya berjalan pada hari kurir benar-benar bekerja; kolom ini
+  // mencegah pemotongan dua kali dalam satu hari.
+  lastChargeOn DateTime?
+  startedAt    DateTime @default(now())
+  settledAt    DateTime?
+
+  @@index([courierId])
 }
 
 // ------------------------------------------------------------------

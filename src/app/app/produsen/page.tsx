@@ -20,6 +20,25 @@ export default async function ProdusenDashboard() {
   });
   const categories = await prisma.category.findMany({ orderBy: { name: 'asc' } });
 
+  // Ringkasan hari ini (poster panel 3: "Pesanan Masuk Hari Ini" + omzet).
+  // Dihitung dari OrderItem milik produsen ini, bukan dari Order — satu order
+  // bisa memuat barang beberapa penjual, jadi menghitung per order akan
+  // melebih-lebihkan angka setiap penjual di dalamnya.
+  const awalHari = new Date();
+  awalHari.setHours(0, 0, 0, 0);
+  const itemHariIni = producer
+    ? await prisma.orderItem.findMany({
+        where: {
+          product: { producerId: producer.id },
+          order: { createdAt: { gte: awalHari }, status: { not: 'DIBATALKAN' } },
+        },
+        select: { qty: true, unitPrice: true, orderId: true },
+      })
+    : [];
+  const omzetHariIni = itemHariIni.reduce((a, i) => a + i.unitPrice * i.qty, 0);
+  const pesananHariIni = new Set(itemHariIni.map((i) => i.orderId)).size;
+  const stokHabis = producer?.products.filter((p) => p.stock < 1).length ?? 0;
+
   const hetByCat: Record<string, { max: number | null; floor: number | null }> = {};
   for (const c of categories) {
     const h = await getActiveHet(c.id);
@@ -29,6 +48,27 @@ export default async function ProdusenDashboard() {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr,360px]">
       <section>
+        <div className="mb-4 grid grid-cols-3 gap-3">
+          <Card className="p-3">
+            <p className="text-xs text-ink/55">Pesanan hari ini</p>
+            <p className="mt-0.5 text-2xl font-semibold text-leaf-700">{pesananHariIni}</p>
+          </Card>
+          <Card className="p-3">
+            <p className="text-xs text-ink/55">Omzet hari ini</p>
+            <p className="mt-0.5 text-lg font-semibold text-leaf-700">{rupiah(omzetHariIni)}</p>
+          </Card>
+          <Card className="p-3">
+            <p className="text-xs text-ink/55">Stok habis</p>
+            <p
+              className={
+                'mt-0.5 text-2xl font-semibold ' + (stokHabis > 0 ? 'text-accent-600' : 'text-leaf-700')
+              }
+            >
+              {stokHabis}
+            </p>
+          </Card>
+        </div>
+
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-xl font-semibold">Produk saya</h1>
           <div className="flex items-center gap-2">

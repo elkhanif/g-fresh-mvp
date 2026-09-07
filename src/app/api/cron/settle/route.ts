@@ -3,6 +3,7 @@ import { settleExpiredGracePeriods } from '@/lib/escrow';
 import { escalateExpiredResponses, escalateStaleOffers, autoResolveStaleAdminDisputes } from '@/lib/complaint';
 import { markOverdueInvoices } from '@/lib/b2b';
 import { markExpiredCertifications } from '@/lib/cert-expiry';
+import { potongAngsuranHarian } from '@/lib/wallet';
 
 // GET /api/cron/settle — dipanggil terjadwal (mis. tiap 10 menit) untuk
 // menyelesaikan order yang grace period-nya lewat tanpa komplain.
@@ -26,6 +27,8 @@ export async function GET(req: Request) {
   const overdue = await markOverdueInvoices();
   // Sertifikasi produsen yang masa berlakunya lewat → KEDALUWARSA + jejak audit.
   const expiredCerts = await markExpiredCertifications();
+  // Angsuran coolbox: hanya untuk kurir yang hari ini benar-benar mengantar.
+  const angsuran = await potongAngsuranHarian();
   return NextResponse.json({
     settled: results.length,
     escalated: escalated.length,
@@ -33,6 +36,7 @@ export async function GET(req: Request) {
     autoRefunded: autoRefunded.length,
     overdueInvoices: overdue,
     expiredCertifications: expiredCerts.length,
+    angsuranAlatDipotong: angsuran.length,
     results,
   });
 }

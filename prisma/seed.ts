@@ -101,6 +101,8 @@ async function main() {
   await prisma.orderEvent.deleteMany({});
   await prisma.orderItem.deleteMany({});
   await prisma.order.deleteMany({});
+  await prisma.walletTx.deleteMany({});
+  await prisma.toolkitPlan.deleteMany({});
   await prisma.certReview.deleteMany({});
   await prisma.stockMovement.deleteMany({}); // ikut cascade dari Product, dihapus eksplisit biar jelas
   await prisma.priceHistory.deleteMany({});
@@ -478,6 +480,90 @@ function fotoProduk(nama: string): string | null {
     }
   }
   console.log('› data sertifikasi & riwayat keputusan dibuat');
+
+  // ------------------------------------------------ Dompet & coolbox kurir
+  // Tanpa ini panel dompet kosong padahal kurir seed sudah punya riwayat
+  // antaran. Nilainya dibuat konsisten: saldo = jumlah seluruh mutasi.
+  const semuaKurir = await prisma.courierProfile.findMany({ select: { id: true } });
+  let ku = 0;
+  for (const k of semuaKurir) {
+    ku += 1;
+    const hariBerjalan = ku === 1 ? 12 : ku === 2 ? 30 : 3;
+    await prisma.toolkitPlan.create({
+      data: {
+        courierId: k.id,
+        paidDays: hariBerjalan,
+        lastChargeOn: hoursAgo(26),
+        startedAt: hoursAgo(24 * (hariBerjalan + 2)),
+      },
+    });
+    // Upah antar terkumpul + potongan yang sudah berjalan.
+    await prisma.walletTx.create({
+      data: {
+        courierId: k.id,
+        kind: 'ONGKIR',
+        amount: 40_000 + hariBerjalan * 12_000,
+        note: 'Akumulasi upah antar (data demo)',
+        createdAt: hoursAgo(24 * hariBerjalan),
+      },
+    });
+    await prisma.walletTx.create({
+      data: {
+        courierId: k.id,
+        kind: 'POTONGAN_ALAT',
+        amount: -(hariBerjalan * 10_000),
+        note: `Angsuran coolbox ${hariBerjalan} hari (data demo)`,
+        createdAt: hoursAgo(26),
+      },
+    });
+  }
+  console.log(`› dompet & skema coolbox untuk ${semuaKurir.length} kurir dibuat`);
+
+  // ------------------------------------------------------ Pasar rakyat
+  // Tujuh pasar yang terdaftar di portal SIBAPO Diskoperindag Kab. Gresik.
+  // Nama dan alamatnya diambil apa adanya supaya `slug` bisa dipakai sebagai
+  // tujuan deep-link dari portal tersebut kalau kerja samanya jadi.
+  const PASAR = [
+    { slug: 'baru', name: 'Pasar Baru', kecamatan: 'Gresik', address: 'Jl. Gubernur Suryo, Gresik' },
+    { slug: 'kota', name: 'Pasar Kota', kecamatan: 'Gresik', address: 'Jl. Basuki Rahmat, Gresik' },
+    { slug: 'giri', name: 'Pasar Giri', kecamatan: 'Gresik', address: 'Jl. Sunan Giri, Gresik' },
+    { slug: 'sidomoro', name: 'Pasar Sidomoro', kecamatan: 'Kebomas', address: 'Jl. Sidomoro, Kebomas' },
+    { slug: 'sidayu', name: 'Pasar Sidayu', kecamatan: 'Sidayu', address: 'Jl. Raya Sidayu, Sidayu' },
+    { slug: 'dukun', name: 'Pasar Dukun', kecamatan: 'Dukun', address: 'Jl. Raya Dukun, Dukun' },
+    { slug: 'driyorejo', name: 'Pasar Driyorejo', kecamatan: 'Driyorejo', address: 'Jl. Raya Driyorejo, Driyorejo' },
+  ];
+  for (const m of PASAR) {
+    await prisma.market.upsert({
+      where: { slug: m.slug },
+      update: { name: m.name, kecamatan: m.kecamatan, address: m.address },
+      create: m,
+    });
+  }
+
+  // Sebagian produsen dijadikan pedagang kios supaya katalog hibrida di poster
+  // ada isinya: dua jalur pasok berdampingan, bukan cuma petani.
+  const pasarGiri = await prisma.market.findUnique({ where: { slug: 'giri' } });
+  const pasarBaru = await prisma.market.findUnique({ where: { slug: 'baru' } });
+  const pasarSidomoro = await prisma.market.findUnique({ where: { slug: 'sidomoro' } });
+  const kandidatKios = await prisma.producerProfile.findMany({
+    orderBy: { createdAt: 'asc' },
+    take: 3,
+    select: { id: true },
+  });
+  const penempatan = [
+    { market: pasarGiri, kios: 'Kios Bu Siti - Blok A' },
+    { market: pasarBaru, kios: 'Kios Pok Inah - Blok C' },
+    { market: pasarSidomoro, kios: 'Kios Pak Har - Blok B' },
+  ];
+  for (let i = 0; i < kandidatKios.length; i++) {
+    const t = penempatan[i];
+    if (!t?.market) continue;
+    await prisma.producerProfile.update({
+      where: { id: kandidatKios[i].id },
+      data: { sellerType: 'PASAR', marketId: t.market.id, kioskName: t.kios },
+    });
+  }
+  console.log(`› ${PASAR.length} pasar rakyat + ${kandidatKios.length} kios dibuat`);
 
   // ------------------------------------------------- Buku besar stok & harga
   // Produk seed dibuat langsung di level data, jadi tanpa baris ini buku besar
