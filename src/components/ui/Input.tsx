@@ -4,7 +4,7 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
   return (
     <input
       className={cn(
-        'w-full rounded-lg border border-leaf-200 bg-white px-3 py-2 text-sm outline-none focus:border-leaf-500',
+        'w-full rounded-lg border border-leaf-200 bg-white px-3 py-2 text-sm outline-hidden focus:border-leaf-500',
         className,
       )}
       {...props}
@@ -20,7 +20,7 @@ export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLS
   return (
     <select
       className={cn(
-        'w-full rounded-lg border border-leaf-200 bg-white px-3 py-2 text-sm outline-none focus:border-leaf-500',
+        'w-full rounded-lg border border-leaf-200 bg-white px-3 py-2 text-sm outline-hidden focus:border-leaf-500',
         className,
       )}
       {...props}

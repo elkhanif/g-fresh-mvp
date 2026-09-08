@@ -62,7 +62,7 @@ export function KtpReviewCard({
         {ktpPhotoUrl && (
           <a href={ktpPhotoUrl} target="_blank" rel="noreferrer">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={ktpPhotoUrl} alt="Foto KTP" className="h-12 w-16 rounded border border-leaf-100 object-cover" />
+            <img src={ktpPhotoUrl} alt="Foto KTP" className="h-12 w-16 rounded-sm border border-leaf-100 object-cover" />
           </a>
         )}
         <Button variant="outline" onClick={() => decide('CABUT')} disabled={!!loading}>
@@ -81,7 +81,7 @@ export function KtpReviewCard({
       <div className="flex flex-wrap items-center gap-3">
         <a href={ktpPhotoUrl} target="_blank" rel="noreferrer">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={ktpPhotoUrl} alt="Foto KTP" className="h-14 w-20 rounded border border-leaf-100 object-cover" />
+          <img src={ktpPhotoUrl} alt="Foto KTP" className="h-14 w-20 rounded-sm border border-leaf-100 object-cover" />
         </a>
         <span className="text-sm text-ink/70">NIK: {ktpNumber ?? '—'}</span>
       </div>

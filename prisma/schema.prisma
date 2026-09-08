@@ -578,3 +578,33 @@ model ComplaintOffer {
 
   @@index([complaintId])
 }
+
+/// Jejak audit pembukaan berkas privat (foto KTP, salinan sertifikat, bukti
+/// komplain). Mencatat yang DIIZINKAN maupun yang DITOLAK — pola penolakan
+/// berulang justru sinyal yang paling berguna.
+///
+/// Append-only, dan SENGAJA tanpa relasi ke User. Kalau ada foreign key,
+/// `db:seed` yang mereset User akan ikut menghapus jejak auditnya; nama
+/// pelaku karena itu disalin saat kejadian (pola yang sama dengan CertReview).
+///
+/// Kegunaan praktis: kalau suatu saat ada dugaan kebocoran data KTP, ini
+/// satu-satunya cara menjawab "siapa saja yang pernah membukanya".
+model FileAccessLog {
+  id        String   @id @default(cuid())
+  kind      String   // ktp | cert | complaints
+  fileUrl   String   // /api/files/<kind>/<name>
+  actorId   String?  // userId pembuka; null bila belum login
+  actorName String   // disalin saat kejadian, tidak ikut terhapus
+  actorRole Role?
+  allowed   Boolean
+  reason    String?  // kode alasan bila ditolak (BUKAN_PEMILIK, BELUM_LOGIN, …)
+  subjectId String?  // userId pemilik data (subjek data)
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([fileUrl])
+  @@index([actorId])
+  @@index([subjectId])
+  @@index([createdAt])
+}

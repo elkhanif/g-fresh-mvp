@@ -224,8 +224,8 @@ export default async function KurirDashboard() {
                     href={
                       o.status === 'DIKIRIM'
                         ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(o.addressText)}`
-                        : prod?.lat != null && prod?.lng != null
-                          ? `https://www.google.com/maps/dir/?api=1&destination=${prod.lat},${prod.lng}`
+                        : prod?.latitude != null && prod?.longitude != null
+                          ? `https://www.google.com/maps/dir/?api=1&destination=${prod.latitude},${prod.longitude}`
                           : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(prod?.farmName ?? '')}`
                     }
                     target="_blank"

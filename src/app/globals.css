@@ -1,10 +1,68 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-:root {
+/*
+  TEMA — Tailwind v4 CSS-first (@theme). Ini pengganti tailwind.config.ts,
+  yang sudah dihapus di migrasi v3.4 → v4.
+
+  Yang WAJIB dijaga saat menyentuh blok ini:
+  - `leaf-600` HARUS tetap #2E7D32. Skala leaf sengaja disusun agar 600 jatuh
+    tepat di hijau poster, supaya seluruh `bg-leaf-600` yang sudah tersebar di
+    kode memakai warna poster tanpa menyentuh satu pun komponen. Menggeser
+    satu langkah = seluruh aplikasi ganti warna.
+  - `accent-500` (#FF8F00) dipakai TERBATAS di 3 aksi puncak (bayar & pesan,
+    bayar sekarang, konfirmasi terima). Alasannya bukan sekadar ikut poster:
+    hijau di atas putih luntur saat diproyeksikan. Kalau semua tombol oranye,
+    tidak ada yang menonjol.
+
+  Nama token v4 = nama utility-nya: --color-leaf-600 menghasilkan
+  bg-leaf-600 / text-leaf-600 / border-leaf-600. Tidak ada lagi
+  theme('colors.leaf.600') — pakai var(--color-leaf-600) di CSS biasa.
+*/
+@theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
+
+  /* Palet poster G-Fresh. */
+  --color-leaf-50: #e8f5e9;
+  --color-leaf-100: #c8e6c9;
+  --color-leaf-200: #a5d6a7;
+  --color-leaf-300: #81c784;
+  --color-leaf-400: #66bb6a;
+  --color-leaf-500: #43a047;
+  --color-leaf-600: #2e7d32;
+  --color-leaf-700: #256428;
+  --color-leaf-800: #1b5e20;
+  --color-leaf-900: #123d16;
+
+  /* Oranye: aksi utama yang harus menonjol. */
+  --color-accent-50: #fff3e0;
+  --color-accent-100: #ffe0b2;
+  --color-accent-500: #ff8f00;
+  --color-accent-600: #ef6c00;
+  --color-accent-700: #e65100;
+
+  /* Biru: elemen informasi/data (grafik, label acuan resmi). */
+  --color-info-50: #e3f2fd;
+  --color-info-100: #bbdefb;
+  --color-info-500: #1565c0;
+  --color-info-600: #0d47a1;
+
+  --color-surface: #f8f9fa;
+
+  --color-clay-100: #f6ede2;
+  --color-clay-400: #c98b5a;
+  --color-clay-600: #a5673a;
+
+  --color-ink: #1b241a;
+
+  /* LATAR HALAMAN — satu titik ganti, tidak ada file lain yang perlu disentuh.
+     Pilihan:
+       #f8f9fa  abu sangat muda (SEKARANG) — kartu putih tetap terbaca menonjol
+       #ffffff  putih murni — paling bersih, tapi kartu bg-white jadi menyatu
+                dengan latar dan cuma dibatasi garis tipis
+       #e8f5e9  hijau muda (leaf-50) — tampilan sebelum v23
+     Cukup ubah nilai di bawah ini. */
+  --color-page: #f8f9fa;
 }
 
 html {
@@ -12,12 +70,13 @@ html {
 }
 
 body {
-  @apply bg-leaf-50 text-ink antialiased;
+  background-color: var(--color-page);
+  @apply text-ink antialiased;
 }
 
 /* Fokus keyboard yang terlihat (aksesibilitas) */
 :focus-visible {
-  outline: 2px solid theme('colors.leaf.600');
+  outline: 2px solid var(--color-leaf-600);
   outline-offset: 2px;
 }
 

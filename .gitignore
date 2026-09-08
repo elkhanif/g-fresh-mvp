@@ -9,3 +9,5 @@ node_modules
 /prisma/dev.db
 next-env.d.ts
 public/uploads
+
+private-uploads

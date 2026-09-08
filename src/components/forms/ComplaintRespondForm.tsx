@@ -75,7 +75,7 @@ export function ComplaintRespondForm({
           <input
             type="number" min={1} max={orderTotal - 1} value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="w-full rounded-lg border border-leaf-200 px-3 py-2 text-sm outline-none focus:border-leaf-500"
+            className="w-full rounded-lg border border-leaf-200 px-3 py-2 text-sm outline-hidden focus:border-leaf-500"
             placeholder={`1 – ${orderTotal - 1}`}
           />
           {suggestedRefund != null && Number(amount) !== suggestedRefund && (
@@ -91,7 +91,7 @@ export function ComplaintRespondForm({
       )}
 
       <textarea
-        className="w-full rounded-lg border border-leaf-200 px-3 py-2 text-sm outline-none focus:border-leaf-500"
+        className="w-full rounded-lg border border-leaf-200 px-3 py-2 text-sm outline-hidden focus:border-leaf-500"
         rows={3}
         placeholder={
           mode === 'SETUJU' ? 'Catatan untuk konsumen (opsional)'

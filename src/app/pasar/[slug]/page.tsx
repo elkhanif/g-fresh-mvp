@@ -82,10 +82,10 @@ export default async function EtalasePasar({ params }: { params: { slug: string 
           </p>
         </Card>
       ) : (
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-6 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-3">
           {products.map((p) => (
             <Card key={p.id} className="overflow-hidden p-0">
-              <div className="aspect-[5/3] w-full overflow-hidden bg-leaf-50">
+              <div className="relative aspect-[5/3] w-full overflow-hidden bg-leaf-50">
                 {p.photoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={p.photoUrl} alt={p.name} className="h-full w-full object-cover" />
@@ -94,18 +94,20 @@ export default async function EtalasePasar({ params }: { params: { slug: string 
                     <Icon name={categoryIcon(p.category.name)} size={44} />
                   </div>
                 )}
-              </div>
-              <div className="p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <Badge>{p.category.name}</Badge>
-                  <CertBadge status={p.producer.certStatus} type={p.producer.certType} />
+                <div className="absolute bottom-1.5 left-1.5 right-1.5">
+                  <CertBadge status={p.producer.certStatus} type={p.producer.certType} compact />
                 </div>
-                <p className="mt-2 font-medium">{p.name}</p>
-                <p className="text-lg font-semibold text-leaf-700">
+              </div>
+              <div className="p-3 sm:p-4">
+                <div>
+                  <Badge>{p.category.name}</Badge>
+                </div>
+                <p className="mt-2 line-clamp-2 text-sm font-medium sm:text-base">{p.name}</p>
+                <p className="text-base font-semibold text-leaf-700 sm:text-lg">
                   {rupiah(p.price)}
                   <span className="text-sm font-normal text-ink/50">/{p.unit}</span>
                 </p>
-                <p className="mt-1 text-xs text-ink/50">
+                <p className="mt-1 line-clamp-1 text-xs text-ink/50">
                   {p.producer.kioskName ?? p.producer.farmName}
                 </p>
               </div>

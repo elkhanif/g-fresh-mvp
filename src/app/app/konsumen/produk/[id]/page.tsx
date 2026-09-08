@@ -49,7 +49,7 @@ export default async function ProductDetail({ params }: { params: { id: string }
             <div className="flex h-full items-center justify-center text-leaf-300"><Icon name={categoryIcon(p.category.name)} size={72} /></div>
           )}
           {segar && (
-            <span className="absolute bottom-3 left-3 rounded-full bg-white/95 px-3 py-1 text-xs font-medium text-leaf-700 shadow-sm">
+            <span className="absolute bottom-3 left-3 rounded-full bg-white/95 px-3 py-1 text-xs font-medium text-leaf-700 shadow-xs">
               ✓ Panen segar hari ini
             </span>
           )}

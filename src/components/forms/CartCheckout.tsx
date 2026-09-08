@@ -184,7 +184,7 @@ export function CartCheckout({
                   onClick={() => gantiKanal(c)}
                   className={
                     'flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition ' +
-                    (channel === c ? 'bg-white text-leaf-800 shadow-sm' : 'text-ink/60')
+                    (channel === c ? 'bg-white text-leaf-800 shadow-xs' : 'text-ink/60')
                   }
                 >
                   {c === 'B2C' ? 'Eceran' : 'Grosir (B2B)'}

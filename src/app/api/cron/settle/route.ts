@@ -8,6 +8,13 @@ import { potongAngsuranHarian } from '@/lib/wallet';
 // GET /api/cron/settle — dipanggil terjadwal (mis. tiap 10 menit) untuk
 // menyelesaikan order yang grace period-nya lewat tanpa komplain.
 // Lindungi dengan header: Authorization: Bearer $CRON_SECRET
+// WAJIB. Tanpa ini Next memperlakukan handler GET ini sebagai statis:
+// hasilnya dibuat SEKALI saat `next build` lalu disajikan dari cache. Dua
+// akibatnya sama-sama merusak — logika settle ikut jalan saat build (build
+// tidak boleh mengubah data), dan pemanggilan cron berikutnya hanya
+// menerima respons basi tanpa mengerjakan apa pun.
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
   if (secret) {

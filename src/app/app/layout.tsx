@@ -28,8 +28,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <Providers>
       <CartProvider>
         <div className="min-h-screen">
-          <header className="sticky top-0 z-10 border-b border-leaf-100 bg-white/90 backdrop-blur">
-            <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-5 py-2.5">
+          <header className="sticky top-0 z-30 border-b border-leaf-100 bg-white/90 backdrop-blur">
+            {/* h-12 (48px) DISETEL EKSPLISIT, bukan hasil padding: bilah katalog
+                  di /app/konsumen menempel dengan `top-12`. Kalau tinggi ini
+                  diubah, angka di StickyCatalogBar.tsx wajib ikut diubah. */}
+            <div className="mx-auto flex h-12 max-w-5xl items-center justify-between gap-4 px-5">
               <div className="flex items-center gap-6">
                 <Link href="/app" className="flex items-center" aria-label="G-Fresh">
                   {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
+// WAJIB. Health check yang di-cache selalu menjawab 'ok' dari hasil build,
+// termasuk ketika database sedang mati — pemeriksaan yang tidak pernah bisa
+// gagal tidak memeriksa apa pun.
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     await prisma.$queryRaw`SELECT 1`;

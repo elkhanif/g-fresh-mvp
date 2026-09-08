@@ -37,6 +37,26 @@ import path from 'path';
 
 const prisma = new PrismaClient();
 
+/**
+ * Salin berkas contoh dari prisma/assets/ ke penyimpanan PRIVAT, lalu
+ * kembalikan URL route ber-autentikasinya.
+ *
+ * prisma/assets/ bukan public/ — berkasnya ikut repo (memang cuma gambar
+ * palsu), tapi tidak pernah dilayani Next secara statis.
+ */
+function stagePrivateAsset(kind: string, name: string): string {
+  const src = path.join(process.cwd(), 'prisma', 'assets', name);
+  const root = process.env.PRIVATE_UPLOAD_DIR || path.join(process.cwd(), 'private-uploads');
+  const dir = path.join(root, kind);
+  fs.mkdirSync(dir, { recursive: true });
+  if (fs.existsSync(src)) {
+    fs.copyFileSync(src, path.join(dir, name));
+  } else {
+    console.warn(`› ⚠ berkas contoh ${src} tidak ada — URL tetap dibuat, gambar akan 404`);
+  }
+  return `/api/files/${kind}/${name}`;
+}
+
 // --- Util --------------------------------------------------------------
 const SECRET = process.env.TRACE_SECRET || 'dev-trace-secret-change-me';
 
@@ -702,6 +722,13 @@ function fotoProduk(nama: string): string | null {
   ];
   const kurirRefs: { courierId: string; userId: string; name: string }[] = [];
   let nikSeq = 3524011234560001; // NIK dummy berurutan, jelas bukan data asli
+  // Foto KTP demo ditempatkan ke penyimpanan PRIVAT, bukan public/.
+  // Dulu berkas ini ada di public/placeholder-ktp.png sehingga bisa dibuka
+  // siapa pun tanpa login — persis kebiasaan yang mau dihilangkan. Sekarang
+  // demo pun menempuh route ber-autentikasi /api/files, jadi jalur aslinya
+  // benar-benar teruji (dan tercatat di FileAccessLog).
+  const ktpDemoUrl = stagePrivateAsset('ktp', 'placeholder-ktp.png');
+
   for (const K of KURIR) {
     const verified = K.ktpState === 'verified';
     const pending = K.ktpState === 'pending';
@@ -717,7 +744,7 @@ function fotoProduk(nama: string): string | null {
             ktpVerified: verified,
             ktpNumber: verified || pending ? String(nikSeq++) : null,
             // Placeholder — pada data asli ini akan berupa foto hasil unggahan kurir.
-            ktpPhotoUrl: verified || pending ? '/placeholder-ktp.png' : null,
+            ktpPhotoUrl: verified || pending ? ktpDemoUrl : null,
             ktpSubmittedAt: verified || pending ? hoursAgo(verified ? 72 : 3) : null,
           },
         },
