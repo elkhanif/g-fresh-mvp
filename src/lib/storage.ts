@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
+import sharp from 'sharp';
 
 // Penyimpanan file. DUA KELAS, sengaja dipisah:
 //
@@ -25,7 +26,8 @@ import path from 'path';
 //    tidak berubah.
 const provider = process.env.STORAGE_PROVIDER || 'local';
 
-const MAX_BYTES = 15 * 1024 * 1024; // 15 MB / file
+const MAX_BYTES = 15 * 1024 * 1024; // 15 MB / file yang DITERIMA (sebelum normalisasi)
+const MAX_SISI = 1400; // sisi terpanjang setelah normalisasi, px
 const IMAGE_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -111,16 +113,70 @@ export async function uploadDocuments(files: IncomingFile[], subdir = 'docs'): P
   return uploadMany(files, subdir, { ...IMAGE_EXT, 'application/pdf': 'pdf' });
 }
 
+/**
+ * Normalisasi gambar KELAS PUBLIK (foto produk). Tiga hal sekaligus:
+ *
+ * 1. RESIZE — ini penghematan utamanya, bukan webp. Foto HP 12MP ~4 MB
+ *    disimpan mentah untuk kartu selebar 160px. Sisi terpanjang 1400px
+ *    sudah lebih dari cukup untuk halaman detail di layar HP.
+ * 2. WEBP q80 — tambahan ~35% di atas hasil resize.
+ * 3. BUANG EXIF — termasuk koordinat GPS. Foto panen yang diambil di tambak
+ *    atau di rumah produsen membawa titik lokasinya, dan foto produk adalah
+ *    berkas PUBLIK: bisa diunduh tanpa login lewat /pasar/[slug].
+ *
+ *    Aplikasi ini sudah memutuskan granularitas lokasi yang boleh publik —
+ *    kecamatan dan nama pasar, keduanya eksplisit di schema. EXIF menerbitkan
+ *    granularitas yang jauh lebih halus dari keputusan itu, tanpa produsen
+ *    tahu. Sama napasnya dengan alasan kelas privat ada.
+ *
+ * `.rotate()` TANPA argumen menerapkan orientasi EXIF, dan WAJIB dipanggil
+ * di sini: sharp membuang metadata saat encode, jadi kalau orientasinya belum
+ * "dipanggang" ke piksel, foto potret dari HP keluar miring 90 derajat.
+ *
+ * SENGAJA TIDAK menyentuh kelas privat:
+ *  - KTP → NIK harus tetap terbaca petugas verifikasi. Resize/re-encode bisa
+ *    membuat verifikasi gagal, dan itu memblokir kurir dari pekerjaan.
+ *  - bukti komplain → barang bukti sengketa yang berujung pada uang.
+ *    Re-encode melemahkannya, dan isinya bisa video.
+ *  - salinan sertifikat → dokumen resmi, kadang PDF.
+ */
+async function normalisasiGambarPublik(f: IncomingFile): Promise<IncomingFile> {
+  // GIF dibiarkan: sharp hanya mengambil frame pertama, animasinya mati.
+  if (f.type === 'image/gif') return f;
+
+  try {
+    const buf = await sharp(f.buf, { failOn: 'none' })
+      .rotate()
+      .resize({ width: MAX_SISI, height: MAX_SISI, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 80 })
+      .toBuffer();
+    return { type: 'image/webp', buf };
+  } catch {
+    // Gambar rusak/format aneh: lolos apa adanya, biar unggahan tidak gagal
+    // total. Validasi tipe sudah dilakukan pemanggil sebelum masuk sini.
+    return f;
+  }
+}
+
 async function uploadMany(
   files: IncomingFile[],
   subdir: string,
   allowedExt: Record<string, string>,
 ): Promise<string[]> {
   const urls: string[] = [];
-  for (const f of files) {
-    const ext = allowedExt[f.type];
+  for (const asli of files) {
+    // Validasi SELALU pada berkas asli, sebelum konversi — supaya PDF dan
+    // video tidak pernah masuk sharp.
+    if (!allowedExt[asli.type]) throw new Error(`Tipe file tidak didukung: ${asli.type}`);
+    if (asli.buf.length > MAX_BYTES) throw new Error('Ukuran file melebihi 15 MB.');
+
+    const f =
+      !isPrivateKind(subdir) && asli.type in IMAGE_EXT
+        ? await normalisasiGambarPublik(asli)
+        : asli;
+
+    const ext = allowedExt[f.type] ?? IMAGE_EXT[f.type];
     if (!ext) throw new Error(`Tipe file tidak didukung: ${f.type}`);
-    if (f.buf.length > MAX_BYTES) throw new Error('Ukuran file melebihi 15 MB.');
 
     const key = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.${ext}`;
 

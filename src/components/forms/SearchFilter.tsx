@@ -9,6 +9,11 @@ import { Icon } from '@/components/ui/Icon';
  * Dropdown kategori DIHAPUS: baris ikon kategori tepat di atasnya melakukan
  * hal yang sama persis, dan dua kontrol untuk satu fungsi membuat layar
  * mobile penuh tanpa menambah kemampuan apa pun.
+ *
+ * Tinggi ditekan ke ~38px (dari ~48px). Elemen tertinggi di dalam kotak ini
+ * adalah tombol "Cari", bukan input-nya — jadi padding tombol yang dikecilkan
+ * lebih dulu, baru padding kotak. Angka ini masih jauh di bawah `max-h-20`
+ * di StickyCatalogBar, jadi animasi buka-tutupnya tidak perlu disetel ulang.
  */
 export function SearchFilter({ initialQ, initialCat }: { initialQ: string; initialCat: string }) {
   const router = useRouter();
@@ -27,11 +32,11 @@ export function SearchFilter({ initialQ, initialCat }: { initialQ: string; initi
         e.preventDefault();
         apply(q, initialCat);
       }}
-      className="mb-4"
+      className="mb-3"
     >
-      <div className="flex items-center gap-2 rounded-xl border border-leaf-200 bg-white px-3 py-2 focus-within:border-leaf-400">
+      <div className="flex items-center gap-2 rounded-lg border border-leaf-200 bg-white px-3 py-1.5 focus-within:border-leaf-400">
         <span className="text-ink/40">
-          <Icon name="search" size={19} />
+          <Icon name="search" size={16} />
         </span>
         <input
           value={q}
@@ -53,7 +58,7 @@ export function SearchFilter({ initialQ, initialCat }: { initialQ: string; initi
         )}
         <button
           type="submit"
-          className="shrink-0 rounded-lg bg-leaf-600 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-leaf-700"
+          className="shrink-0 rounded-md bg-leaf-600 px-3 py-1 text-xs font-medium text-white hover:bg-leaf-700"
         >
           Cari
         </button>
