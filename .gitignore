@@ -1,13 +1,18 @@
 node_modules
 .next
-.env
-.env.local
-.env.neon
-.env.*.local
-*.log
-.DS_Store
-/prisma/dev.db
-next-env.d.ts
-public/uploads
+.vercel
 
+# Env: tutup semua, kecuali contoh yang memang mau di-share
+.env*
+!.env.example
+!.env.demo.example
+
+# Build artifacts
+*.tsbuildinfo
+*.log
+
+.DS_Store
+next-env.d.ts
+/prisma/dev.db
+public/uploads
 private-uploads
