@@ -12,6 +12,7 @@ import { Icon } from '@/components/ui/Icon';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
 import { PerfBadge } from '@/components/PerfBadge';
 import { KurirAccept, KurirAdvance, AvailabilityToggle } from '@/components/forms/KurirActions';
+import { urlNavigasi } from '@/lib/maps';
 import { saldoKurir } from '@/lib/wallet';
 import { prisma as db } from '@/lib/db';
 
@@ -158,11 +159,18 @@ export default async function KurirDashboard() {
                 { teks: `Antar ke ${o.addressText}`, selesai: false },
               ];
 
+              // Tujuan konsumen dulu dikirim sebagai TEKS alamat, padahal
+              // `o.destLat/destLng` tersedia di baris yang sama dan dipakai
+              // untuk menghitung jarak beberapa baris di bawah. Sekarang
+              // koordinat diutamakan, teks jadi jaring pengaman untuk pesanan
+              // lama yang dibuat sebelum pin ada.
               const tautanPeta = sudahDiambil
-                ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(o.addressText)}`
-                : prod?.latitude != null && prod?.longitude != null
-                  ? `https://www.google.com/maps/dir/?api=1&destination=${prod.latitude},${prod.longitude}`
-                  : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(prod?.farmName ?? '')}`;
+                ? urlNavigasi({ lat: o.destLat, lng: o.destLng, teks: o.addressText })
+                : urlNavigasi({
+                    lat: prod?.latitude,
+                    lng: prod?.longitude,
+                    teks: prod?.farmName,
+                  });
 
               return (
                 // Satu-satunya elemen di halaman ini yang diberi ring hijau.
@@ -220,10 +228,14 @@ export default async function KurirDashboard() {
                       dua wujud berbeda untuk dua aksi yang setara. Sekarang
                       keduanya berbentuk tombol. */}
                   <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-leaf-50 pt-3">
-                    <a href={tautanPeta} target="_blank" rel="noreferrer" className={TAUTAN_TOMBOL}>
-                      <Icon name="truck" size={16} />
-                      Navigasi ke {sudahDiambil ? 'konsumen' : 'lokasi jemput'}
-                    </a>
+                    {/* Tanpa koordinat maupun teks, tombol ini disembunyikan
+                        alih-alih membuka aplikasi peta yang kosong. */}
+                    {tautanPeta && (
+                      <a href={tautanPeta} target="_blank" rel="noreferrer" className={TAUTAN_TOMBOL}>
+                        <Icon name="truck" size={16} />
+                        Navigasi ke {sudahDiambil ? 'konsumen' : 'lokasi jemput'}
+                      </a>
+                    )}
                     <Link href={`/app/kurir/tugas/${o.id}`} className={TAUTAN_TOMBOL}>
                       Detail
                     </Link>

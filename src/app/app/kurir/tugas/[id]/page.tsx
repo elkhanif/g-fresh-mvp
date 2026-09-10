@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { requireRole } from '@/lib/rbac';
 import { prisma } from '@/lib/db';
 import { rupiah, distanceKm } from '@/lib/utils';
+import { urlTitik } from '@/lib/maps';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
@@ -36,14 +37,12 @@ export default async function TugasDetail({ params }: { params: { id: string } }
       ? distanceKm({ lat: prod.latitude, lng: prod.longitude }, { lat: o.destLat, lng: o.destLng })
       : null;
 
-  const petaJemput =
-    prod?.latitude && prod?.longitude
-      ? `https://www.google.com/maps/search/?api=1&query=${prod.latitude},${prod.longitude}`
-      : null;
-  const petaAntar =
-    o.destLat != null && o.destLng != null
-      ? `https://www.google.com/maps/search/?api=1&query=${o.destLat},${o.destLng}`
-      : null;
+  // Aturan pembentukan URL peta dipindah ke `lib/maps.ts`. Sebelumnya lima
+  // baris terpisah di dua berkas menyusunnya sendiri-sendiri, dan salah satunya
+  // mengirim teks alamat padahal koordinatnya tersedia. Teks kini jadi jaring
+  // pengaman, bukan pilihan pertama.
+  const petaJemput = urlTitik({ lat: prod?.latitude, lng: prod?.longitude, teks: prod?.farmName });
+  const petaAntar = urlTitik({ lat: o.destLat, lng: o.destLng, teks: o.addressText });
 
   return (
     <div className="space-y-5">

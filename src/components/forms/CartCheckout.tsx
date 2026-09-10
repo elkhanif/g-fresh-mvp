@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Input, Label } from '@/components/ui/Input';
 import { rupiah } from '@/lib/utils';
 import { useCart, unitPriceOf } from '@/lib/cart';
+import { PinLokasi, type Titik } from '@/components/PinLokasi';
 
 const B2B_MIN_SUBTOTAL = 500_000;
 
@@ -25,15 +26,25 @@ export function CartCheckout({
   defaultAddress,
   billingAddress,
   b2bEligible,
+  pinTerakhir,
 }: {
   defaultAddress: string;
   billingAddress: string;
   b2bEligible: boolean;
+  /**
+   * Titik antar dari pesanan terakhir pembeli ini, dipakai sebagai nilai awal.
+   * `User` belum punya kolom koordinat tersimpan, jadi alih-alih menambah
+   * kolom baru, titiknya diambil dari pesanan terakhir yang punya koordinat —
+   * data yang memang sudah ada di `Order.destLat/destLng`. Pembeli yang
+   * memesan berulang ke rumah yang sama tidak perlu menandai lagi.
+   */
+  pinTerakhir: Titik | null;
 }) {
   const router = useRouter();
   const { items, setQty, remove, clear, ready } = useCart();
   const [channel, setChannel] = useState<'B2C' | 'B2B'>('B2C');
   const [address, setAddress] = useState(defaultAddress);
+  const [pin, setPin] = useState<Titik | null>(pinTerakhir);
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -63,6 +74,13 @@ export function CartCheckout({
       body: JSON.stringify({
         items: items.map((i) => ({ productId: i.productId, qty: i.qty })),
         addressText: address,
+        // `/api/orders` sudah menerima dua field ini sejak awal dan
+        // memakainya untuk menghitung ongkir per-km, tapi tidak ada satu pun
+        // klien yang pernah mengirimnya — jadi setiap pesanan selama ini
+        // memakai ongkir perkiraan 3 km, dan badge jarak di beranda kurir
+        // tidak pernah muncul. Inilah baris yang menghidupkannya.
+        destLat: pin?.lat,
+        destLng: pin?.lng,
         channel,
       }),
     });
@@ -224,6 +242,20 @@ export function CartCheckout({
               placeholder="Jl. …, Kec. …"
             />
           </div>
+
+          {/* Teks alamat untuk dibaca kurir, titik peta untuk dituju kurir.
+              Keduanya diminta karena masing-masing menjawab hal berbeda: teks
+              menjelaskan "rumah yang mana" (warna pagar, nama gang, patokan),
+              koordinat menjawab "ke mana motornya diarahkan". Menghapus salah
+              satu memindahkan pekerjaan itu ke telepon di jalan. */}
+          <PinLokasi value={pin} onChange={setPin} />
+
+          {!pin && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+              Belum ada titik peta. Pesanan tetap bisa dibuat, tapi ongkirnya dihitung dengan
+              perkiraan 3 km dan kurir hanya berpatokan teks alamat.
+            </p>
+          )}
 
           {msg && <p className="text-sm text-red-600">{msg}</p>}
 
