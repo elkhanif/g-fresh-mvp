@@ -9,6 +9,7 @@ import {
   platformFeeOf, dueDateFrom, unitPriceFor, nextInvoiceNumber, B2B_MIN_SUBTOTAL,
 } from '@/lib/b2b';
 import { adjustStock, StockError } from '@/lib/inventory';
+import { deriveStratum, certVerifiedOf } from '@/lib/trace-stratum';
 
 // GET /api/orders — daftar order sesuai peran.
 export async function GET() {
@@ -136,9 +137,22 @@ export async function POST(req: Request) {
           unitPrice,
           lineTotal,
           traceCode: makeTraceCode(),
-          harvestedAt: p.harvestedAt, // snapshot deklarasi produsen
+          // Snapshot deklarasi produsen SAAT transaksi. Semuanya dibekukan di
+          // sini, termasuk strata — lihat komentar traceStratum di schema.
+          freshAt: p.freshAt,
+          freshBasis: p.freshBasis,
+          cultivationMethod: p.cultivationMethod,
+          harvestLat: p.harvestLat,
+          harvestLng: p.harvestLng,
           producerLat: p.producer.latitude,
           producerLng: p.producer.longitude,
+          traceStratum: deriveStratum({
+            freshBasis: p.freshBasis,
+            harvestLat: p.harvestLat,
+            harvestLng: p.harvestLng,
+            cultivationMethod: p.cultivationMethod,
+            certVerified: certVerifiedOf(p.producer),
+          }),
         });
       }
 

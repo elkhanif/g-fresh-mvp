@@ -8,6 +8,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { deriveStratum, certVerifiedOf } from '../src/lib/trace-stratum';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -247,6 +248,10 @@ function fotoProduk(nama: string): string | null {
     email: string; owner: string; farm: string; kecamatan: string;
     lat: number; lng: number; cert: 'TERVERIFIKASI' | 'MENUNGGU_VERIFIKASI' | 'BELUM_DIAJUKAN' | 'DITOLAK';
     certType?: string;
+    // Metode budidaya default seluruh produk produsen ini. Salah satu dari
+    // empat syarat Jalur A — dibiarkan undefined pada sebagian produsen supaya
+    // data demo punya CONTOH Jalur B, bukan semuanya hijau.
+    metode?: 'ORGANIK_MURNI' | 'ANORGANIK_KONVENSIONAL' | 'CAMPURAN';
     products: {
       cat: string; name: string; price: number; stock: number; unit?: string;
       panenJamLalu: number; b2bPrice?: number; b2bMinQty?: number;
@@ -257,6 +262,7 @@ function fotoProduk(nama: string): string | null {
     {
       email: 'tani.cerme@gfresh.id', owner: 'Pak Slamet', farm: 'Kelompok Tani Cerme Makmur',
       kecamatan: 'Cerme', lat: -7.1725, lng: 112.5891, cert: 'TERVERIFIKASI', certType: 'P-IRT',
+      metode: 'ORGANIK_MURNI',
       products: [
         { cat: 'Sayur', name: 'Bayam Segar', price: 5000, stock: 60, panenJamLalu: 5, b2bPrice: 4000, b2bMinQty: 30 },
         { cat: 'Sayur', name: 'Kangkung', price: 4500, stock: 80, panenJamLalu: 5, b2bPrice: 3500, b2bMinQty: 40 },
@@ -360,7 +366,12 @@ function fotoProduk(nama: string): string | null {
         unit: pr.unit ?? cat[pr.cat].unit,
         price: pr.price,
         stock: pr.stock,
-        harvestedAt: hoursAgo(pr.panenJamLalu),
+        freshAt: hoursAgo(pr.panenJamLalu),
+        // GPS lahan diisi dari koordinat produsen (perilaku autofill yang
+        // sama seperti POST /api/products).
+        harvestLat: P.lat,
+        harvestLng: P.lng,
+        cultivationMethod: P.metode ?? null,
         b2bPrice: pr.b2bPrice ?? null,
         b2bMinQty: pr.b2bMinQty ?? null,
         photoUrl: fotoProduk(pr.name),
@@ -582,6 +593,13 @@ function fotoProduk(nama: string): string | null {
       where: { id: kandidatKios[i].id },
       data: { sellerType: 'PASAR', marketId: t.market.id, kioskName: t.kios },
     });
+    // Produk kios: nilai freshAt-nya waktu kulakan, bukan waktu panen.
+    // Tanpa baris ini seluruh produk kios akan mengklaim "waktu panen" yang
+    // tidak pernah dilaporkan penjualnya.
+    await prisma.product.updateMany({
+      where: { producerId: kandidatKios[i].id },
+      data: { freshBasis: 'TRANSAKSI' },
+    });
   }
   console.log(`› ${PASAR.length} pasar rakyat + ${kandidatKios.length} kios dibuat`);
 
@@ -800,8 +818,14 @@ function fotoProduk(nama: string): string | null {
   // ---------------------------------------------------------------- Riwayat pesanan
   // Dibuat langsung di level data agar dashboard, rating, dan riwayat langsung berisi.
   type ProdukSeed = {
-    id: string; price: number; producerId: string; harvestedAt: Date;
-    producer: { latitude: number | null; longitude: number | null };
+    id: string; price: number; producerId: string; freshAt: Date;
+    freshBasis: 'PANEN' | 'TRANSAKSI';
+    cultivationMethod: 'ORGANIK_MURNI' | 'ANORGANIK_KONVENSIONAL' | 'CAMPURAN' | null;
+    harvestLat: number | null; harvestLng: number | null;
+    producer: {
+      latitude: number | null; longitude: number | null;
+      certStatus: string; certExpiresAt: Date | null;
+    };
   };
   const semuaProduk: ProdukSeed[] = await prisma.product.findMany({
     include: { producer: true },
@@ -870,9 +894,23 @@ function fotoProduk(nama: string): string | null {
             unitPrice: p.price,
             lineTotal: subtotal,
             traceCode: traceCode(),
-            harvestedAt: p.harvestedAt,
+            freshAt: p.freshAt,
+            freshBasis: p.freshBasis,
+            cultivationMethod: p.cultivationMethod,
+            harvestLat: p.harvestLat,
+            harvestLng: p.harvestLng,
             producerLat: p.producer.latitude,
             producerLng: p.producer.longitude,
+            // Dihitung dengan fungsi produksi yang sama, bukan di-hardcode —
+            // kalau syarat Jalur A berubah, data demo ikut berubah dan tidak
+            // diam-diam jadi tidak konsisten dengan aplikasinya.
+            traceStratum: deriveStratum({
+              freshBasis: p.freshBasis,
+              harvestLat: p.harvestLat,
+              harvestLng: p.harvestLng,
+              cultivationMethod: p.cultivationMethod,
+              certVerified: certVerifiedOf(p.producer),
+            }),
           }],
         },
         events: {

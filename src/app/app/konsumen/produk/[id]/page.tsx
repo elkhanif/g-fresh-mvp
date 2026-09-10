@@ -9,6 +9,8 @@ import { rupiah } from '@/lib/utils';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { CertBadge } from '@/components/CertBadge';
+import { StratumBadge } from '@/components/StratumBadge';
+import { deriveStratum, certVerifiedOf, CULTIVATION_LABEL } from '@/lib/trace-stratum';
 import { PerfBadge } from '@/components/PerfBadge';
 import { AddToCart } from '@/components/forms/AddToCart';
 
@@ -36,7 +38,18 @@ export default async function ProductDetail({ params }: { params: { id: string }
   const subsidi = subsidyPercent(p.producer.ratingScore);
   // Badge "panen segar" di poster: klaimnya dibatasi 24 jam supaya tidak
   // menempel selamanya pada produk lama.
-  const segar = Date.now() - p.harvestedAt.getTime() < 24 * 60 * 60 * 1000;
+  const segar = Date.now() - p.freshAt.getTime() < 24 * 60 * 60 * 1000;
+  // Sebelum dibeli, strata dihitung live dari produk. Yang dibekukan hanyalah
+  // strata di OrderItem saat checkout — halaman ini memang harus menampilkan
+  // kondisi terkini, karena inilah yang akan didapat pembeli kalau memesan
+  // sekarang.
+  const stratum = deriveStratum({
+    freshBasis: p.freshBasis,
+    harvestLat: p.harvestLat,
+    harvestLng: p.harvestLng,
+    cultivationMethod: p.cultivationMethod,
+    certVerified: certVerifiedOf(p.producer),
+  });
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -50,12 +63,15 @@ export default async function ProductDetail({ params }: { params: { id: string }
           )}
           {segar && (
             <span className="absolute bottom-3 left-3 rounded-full bg-white/95 px-3 py-1 text-xs font-medium text-leaf-700 shadow-xs">
-              ✓ Panen segar hari ini
+              {/* Pedagang kios tidak memanen. Menempelkan "panen segar hari
+                  ini" pada barang kulakan adalah klaim yang tidak dia buat. */}
+              {p.freshBasis === 'PANEN' ? '✓ Panen segar hari ini' : '✓ Masuk kios hari ini'}
             </span>
           )}
         </div>
         <div className="flex items-center gap-2">
           <Badge>{p.category.name}</Badge>
+          <StratumBadge stratum={stratum} />
           <CertBadge status={p.producer.certStatus} type={p.producer.certType} />
         </div>
         <h1 className="mt-2 text-2xl font-semibold">{p.name}</h1>
@@ -67,7 +83,18 @@ export default async function ProductDetail({ params }: { params: { id: string }
           <div className="flex justify-between"><span className="text-ink/60">Produsen</span><span className="font-medium">{p.producer.farmName}</span></div>
           <div className="flex justify-between"><span className="text-ink/60">Reputasi</span><PerfBadge rating={p.producer.ratingScore} /></div>
           <div className="flex justify-between"><span className="text-ink/60">Lokasi</span><span className="font-medium">Kec. {p.producer.kecamatan}</span></div>
-          <div className="flex justify-between"><span className="text-ink/60">Panen (dilaporkan produsen)</span><span className="font-medium">{fmt(p.harvestedAt)}</span></div>
+          <div className="flex justify-between">
+            <span className="text-ink/60">
+              {p.freshBasis === 'PANEN' ? 'Panen (dilaporkan produsen)' : 'Masuk kios (dilaporkan penjual)'}
+            </span>
+            <span className="font-medium">{fmt(p.freshAt)}</span>
+          </div>
+          {p.cultivationMethod && (
+            <div className="flex justify-between">
+              <span className="text-ink/60">Metode budidaya</span>
+              <span className="font-medium">{CULTIVATION_LABEL[p.cultivationMethod]}</span>
+            </div>
+          )}
           <div className="flex justify-between"><span className="text-ink/60">Stok</span><span className="font-medium">{p.stock} {p.unit}</span></div>
           {het && (
             <div className="flex justify-between"><span className="text-ink/60">HET kategori</span><span className="font-medium">{rupiah(het.maxPrice)}</span></div>

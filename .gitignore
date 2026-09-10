@@ -2,12 +2,15 @@ node_modules
 .next
 .vercel
 
-# Env: tutup semua, kecuali contoh yang memang mau di-share
+# Env: tutup semua, kecuali contoh yang memang dibagikan.
+# Pola lama (.env, .env.local, .env.neon, .env.*.local) meloloskan
+# .env.production — dan Next.js MEMUAT file itu saat `next build`, jadi
+# isinya ikut ke bundle produksi.
 .env*
 !.env.example
 !.env.demo.example
 
-# Build artifacts
+# Build artifact
 *.tsbuildinfo
 *.log
 

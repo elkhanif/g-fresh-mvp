@@ -54,6 +54,35 @@ enum SellerType {
   PASAR // pedagang kios di pasar rakyat
 }
 
+/// Klasifikasi metode produksi (poster pendaftaran seller).
+enum CultivationMethod {
+  ORGANIK_MURNI
+  ANORGANIK_KONVENSIONAL
+  CAMPURAN // diversifikasi: menjual organik & konvensional
+}
+
+/// Arti kolom `freshAt`.
+///
+/// Petani/petambak melaporkan waktu PANEN. Pedagang kios pasar tidak punya
+/// waktu panen — yang dia tahu waktu kulakan (TRANSAKSI). Memaksa keduanya
+/// mengisi field bernama "tanggal panen" berarti sistem meminta data karangan,
+/// dan data karangan di halaman traceability lebih buruk daripada data kosong.
+enum FreshBasis {
+  PANEN
+  TRANSAKSI
+}
+
+/// Dua strata hasil penelusuran mutu (poster: Jalur A / Jalur B).
+///
+/// TIDAK dipilih produsen — diturunkan dari kelengkapan data lewat
+/// deriveStratum() di src/lib/trace-stratum.ts. Kalau strata bisa dipilih,
+/// hampir semua orang memilih yang paling sedikit kerjanya dan badge
+/// "Mutu Terverifikasi" kehilangan artinya.
+enum TraceStratum {
+  MUTU_TERVERIFIKASI // Jalur A — data lengkap + sertifikat sah
+  INFORMASI_DASAR // Jalur B — hanya data wajib
+}
+
 /// Pasar rakyat Kabupaten Gresik. Daftar awalnya mengikuti tujuh pasar yang
 /// terdaftar di portal SIBAPO Diskoperindag, sehingga `slug` bisa dipakai
 /// sebagai tujuan deep-link dari portal tersebut: /pasar/giri.
@@ -330,9 +359,27 @@ model Product {
   // Harga grosir B2B — berlaku bila qty >= b2bMinQty. Tetap divalidasi terhadap HET.
   b2bPrice    Int?
   b2bMinQty   Int?
-  // Waktu panen DIDEKLARASIKAN produsen (self-reported). Ditampilkan apa adanya
-  // di halaman traceability; bukan klaim terverifikasi independen.
-  harvestedAt DateTime
+  // Waktu acuan kesegaran, DIDEKLARASIKAN produsen (self-reported). Ditampilkan
+  // apa adanya di halaman traceability; bukan klaim terverifikasi independen.
+  //
+  // Nama kolom di database tetap "harvestedAt" (@map) supaya migrasi cukup
+  // ADD COLUMN dan aman dijalankan lewat `prisma db push` — db push TIDAK bisa
+  // mendeteksi rename, dia DROP lalu CREATE dan datanya hilang.
+  //
+  // Arti nilainya ditentukan `freshBasis`, bukan diasumsikan dari nama kolom.
+  freshAt     DateTime        @map("harvestedAt")
+  freshBasis  FreshBasis      @default(PANEN)
+  // Data mutu opsional (syarat Jalur A). Kosong = produk turun ke Jalur B,
+  // bukan ditolak: mengunci pendaftaran produk di balik data lengkap akan
+  // mengeluarkan petani yang justru jadi sasaran program ini.
+  //
+  // GPS disimpan per PRODUK, bukan hanya per produsen: satu petani bisa
+  // menggarap beberapa lahan/tambak dengan koordinat berbeda. Nilai awalnya
+  // diisi otomatis dari profil produsen — jangan pernah menyuruh petani
+  // mengetik koordinat manual.
+  harvestLat  Float?
+  harvestLng  Float?
+  cultivationMethod CultivationMethod?
   photoUrl    String?
   active      Boolean         @default(true)
   orderItems  OrderItem[]
@@ -343,6 +390,9 @@ model Product {
 
   @@index([categoryId])
   @@index([producerId])
+  // Katalog selalu diurut freshAt desc (api/products, /pasar/[slug],
+  // /app/konsumen). Tanpa index ini ketiganya sort seluruh tabel.
+  @@index([freshAt])
 }
 
 // ------------------------------------------------------------------
@@ -475,9 +525,22 @@ model OrderItem {
   lineTotal   Int
   // Snapshot data traceability pada saat order dibuat.
   traceCode   String   @unique // dipakai di URL publik /trace/[code]
-  harvestedAt DateTime
+  freshAt     DateTime @map("harvestedAt")
+  freshBasis  FreshBasis @default(PANEN)
+  cultivationMethod CultivationMethod?
+  // Koordinat LAHAN (asal barang). Berbeda dari producerLat/Lng di bawah,
+  // yang merupakan titik penjemputan kurir.
+  harvestLat  Float?
+  harvestLng  Float?
   producerLat Float?
   producerLng Float?
+  // Strata DIBEKUKAN saat transaksi, tidak dibaca ulang dari profil produsen.
+  //
+  // Paspor mutu adalah dokumen satu transaksi: isinya harus apa yang benar
+  // saat barang dibeli. Kalau dibaca live, sertifikat yang dicabut bulan depan
+  // akan menurunkan QR yang sudah tercetak hari ini, dan sertifikat yang baru
+  // terbit akan menaikkan paspor lama yang datanya tidak pernah dikumpulkan.
+  traceStratum TraceStratum @default(INFORMASI_DASAR)
 }
 
 model OrderEvent {

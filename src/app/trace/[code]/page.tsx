@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { isValidTraceCodeShape } from '@/lib/qr';
 import { CertBadge } from '@/components/CertBadge';
+import { StratumBadge } from '@/components/StratumBadge';
+import { CULTIVATION_LABEL } from '@/lib/trace-stratum';
 import { Card } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
 
@@ -29,6 +31,11 @@ export default async function TracePage({ params }: { params: { code: string } }
       })
     : null;
 
+  // Koordinat lahan lebih spesifik daripada koordinat produsen — satu petani
+  // bisa menggarap beberapa lahan — jadi diutamakan untuk peta.
+  const petaLat = item?.harvestLat ?? item?.producerLat ?? null;
+  const petaLng = item?.harvestLng ?? item?.producerLng ?? null;
+
   return (
     <main className="mx-auto max-w-md px-5 py-8">
       <Link href="/" className="text-lg font-bold text-leaf-700">G-Fresh</Link>
@@ -54,9 +61,24 @@ export default async function TracePage({ params }: { params: { code: string } }
 
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between gap-4">
-              <dt className="text-ink/60">Waktu panen (dilaporkan produsen)</dt>
-              <dd className="text-right font-medium">{fmt(item.harvestedAt)}</dd>
+              {/* Label mengikuti freshBasis, bukan diasumsikan "panen".
+                  Pedagang kios melaporkan waktu kulakan — menyebutnya waktu
+                  panen membuat paspor ini berbohong tentang asal barang. */}
+              <dt className="text-ink/60">
+                {item.freshBasis === 'PANEN'
+                  ? 'Waktu panen (dilaporkan produsen)'
+                  : 'Waktu transaksi di pasar (dilaporkan penjual)'}
+              </dt>
+              <dd className="text-right font-medium">{fmt(item.freshAt)}</dd>
             </div>
+            {item.cultivationMethod && (
+              <div className="flex justify-between gap-4">
+                <dt className="text-ink/60">Metode budidaya</dt>
+                <dd className="text-right font-medium">
+                  {CULTIVATION_LABEL[item.cultivationMethod]}
+                </dd>
+              </div>
+            )}
             <div className="flex justify-between gap-4">
               <dt className="text-ink/60">Produsen</dt>
               <dd className="text-right font-medium">{item.product.producer.farmName}</dd>
@@ -71,11 +93,29 @@ export default async function TracePage({ params }: { params: { code: string } }
             </div>
           </dl>
 
-          <div>
-            <CertBadge status={item.product.producer.certStatus} type={item.product.producer.certType} />
+          {/*
+            Strata dibaca dari snapshot OrderItem, BUKAN dari
+            producer.certStatus yang live. Paspor ini dokumen satu transaksi:
+            isinya harus apa yang benar saat barang dibeli. Sertifikat yang
+            dicabut bulan depan tidak boleh menurunkan QR yang sudah tercetak
+            hari ini, dan sebaliknya.
+
+            CertBadge tetap ditampilkan sebagai keterangan status sertifikasi
+            produsen SEKARANG — dua informasi yang berbeda, jadi dipisah
+            labelnya supaya pembaca tidak mengira keduanya hal yang sama.
+          */}
+          <div className="space-y-2">
+            <div>
+              <p className="mb-1 text-xs text-ink/50">Strata penelusuran saat dibeli</p>
+              <StratumBadge stratum={item.traceStratum} />
+            </div>
+            <div>
+              <p className="mb-1 text-xs text-ink/50">Status sertifikasi produsen saat ini</p>
+              <CertBadge status={item.product.producer.certStatus} type={item.product.producer.certType} />
+            </div>
           </div>
 
-          {item.producerLat != null && item.producerLng != null && (
+          {petaLat != null && petaLng != null && (
             <div>
               <p className="mb-2 text-sm font-medium">Lokasi produksi</p>
               {/*
@@ -91,7 +131,7 @@ export default async function TracePage({ params }: { params: { code: string } }
                   className="h-48 w-full"
                   loading="lazy"
                   referrerPolicy="no-referrer"
-                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${item.producerLng - 0.02}%2C${item.producerLat - 0.015}%2C${item.producerLng + 0.02}%2C${item.producerLat + 0.015}&layer=mapnik&marker=${item.producerLat}%2C${item.producerLng}`}
+                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${petaLng - 0.02}%2C${petaLat - 0.015}%2C${petaLng + 0.02}%2C${petaLat + 0.015}&layer=mapnik&marker=${petaLat}%2C${petaLng}`}
                 />
               </div>
               <p className="mt-1 text-xs text-ink/45">
@@ -138,8 +178,10 @@ export default async function TracePage({ params }: { params: { code: string } }
           </div>
 
           <p className="rounded-lg bg-leaf-50 p-3 text-xs text-ink/60">
-            Waktu panen bersumber dari laporan produsen saat mendaftarkan produk. Status sertifikasi
-            diverifikasi manual oleh dinas terkait pada fase pilot. Lokasi ditampilkan hingga tingkat
+            {item.freshBasis === 'PANEN' ? 'Waktu panen' : 'Waktu transaksi'} dan metode budidaya
+            bersumber dari laporan produsen saat mendaftarkan produk. Status sertifikasi diverifikasi
+            manual oleh dinas terkait pada fase pilot. Strata di atas dibekukan saat transaksi, jadi
+            tidak berubah meski data produsen berubah setelahnya. Lokasi ditampilkan hingga tingkat
             kecamatan untuk menjaga privasi produsen.
           </p>
         </Card>

@@ -41,7 +41,7 @@ export default async function EtalasePasar({ params }: { params: { slug: string 
       category: true,
       producer: { select: { farmName: true, kioskName: true, certStatus: true, certType: true } },
     },
-    orderBy: { harvestedAt: 'desc' },
+    orderBy: { freshAt: 'desc' },
     take: 40,
   });
 

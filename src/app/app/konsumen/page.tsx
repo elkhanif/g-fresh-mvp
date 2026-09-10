@@ -72,7 +72,7 @@ export default async function Marketplace({
         },
       },
     },
-    orderBy: { harvestedAt: 'desc' },
+    orderBy: { freshAt: 'desc' },
     take: 60,
   });
 

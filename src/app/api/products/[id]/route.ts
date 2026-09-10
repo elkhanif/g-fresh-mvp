@@ -15,7 +15,15 @@ import { requireOwnedProduct } from '@/lib/product-owner';
  */
 const patchSchema = z.object({
   active: z.boolean().optional(),
-  harvestedAt: z.string().optional(),
+  freshAt: z.string().optional(),
+  // Melengkapi data mutu setelah produk terbit harus bisa — inilah jalan
+  // produk naik dari Jalur B ke Jalur A tanpa didaftarkan ulang.
+  cultivationMethod: z
+    .enum(['ORGANIK_MURNI', 'ANORGANIK_KONVENSIONAL', 'CAMPURAN'])
+    .nullable()
+    .optional(),
+  harvestLat: z.number().min(-90).max(90).nullable().optional(),
+  harvestLng: z.number().min(-180).max(180).nullable().optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -43,7 +51,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     where: { id: guard.product.id },
     data: {
       active: d.active,
-      harvestedAt: d.harvestedAt ? new Date(d.harvestedAt) : undefined,
+      freshAt: d.freshAt ? new Date(d.freshAt) : undefined,
+      cultivationMethod: d.cultivationMethod,
+      harvestLat: d.harvestLat,
+      harvestLng: d.harvestLng,
     },
   });
   return NextResponse.json(updated);

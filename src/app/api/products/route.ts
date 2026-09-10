@@ -24,7 +24,7 @@ export async function GET(req: Request) {
       category: true,
       producer: { select: { farmName: true, kecamatan: true, certStatus: true, certType: true } },
     },
-    orderBy: { harvestedAt: 'desc' },
+    orderBy: { freshAt: 'desc' },
     take: 100,
   });
   return NextResponse.json(products);
@@ -36,7 +36,15 @@ const createSchema = z.object({
   unit: z.string().min(1),
   price: z.number().int().positive(),
   stock: z.number().int().nonnegative(),
-  harvestedAt: z.string(),
+  freshAt: z.string(),
+  // Arti freshAt. Klien mengirim sesuai sellerType, tapi server yang
+  // memutuskan (lihat pemaksaan di bawah) — produsen tidak boleh mengaku
+  // "PANEN" hanya untuk lolos syarat Jalur A.
+  freshBasis: z.enum(['PANEN', 'TRANSAKSI']).default('PANEN'),
+  // Data mutu opsional — syarat Jalur A. Kosong tetap diterima.
+  cultivationMethod: z.enum(['ORGANIK_MURNI', 'ANORGANIK_KONVENSIONAL', 'CAMPURAN']).optional(),
+  harvestLat: z.number().min(-90).max(90).optional(),
+  harvestLng: z.number().min(-180).max(180).optional(),
   // Terima path lokal (/uploads/...) maupun URL penuh (Supabase). Bukan .url().
   photoUrl: z.string().min(1).optional(),
   // #8: harga grosir B2B opsional (harus <= harga ritel).
@@ -58,6 +66,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Data tidak valid', detail: parsed.error.flatten() }, { status: 400 });
   }
   const d = parsed.data;
+
+  // Basis waktu ditentukan jenis penjualnya, bukan kiriman klien. Pedagang
+  // kios tidak bisa mengklaim "PANEN" untuk barang kulakan hanya supaya
+  // produknya naik ke Jalur A; sebaliknya petani tidak perlu mengisi ini.
+  const freshBasis = producer.sellerType === 'PASAR' ? 'TRANSAKSI' : d.freshBasis;
 
   const check = await validatePriceAgainstHet(d.categoryId, d.price);
   if (!check.ok) {
@@ -88,7 +101,13 @@ export async function POST(req: Request) {
       unit: d.unit,
       price: d.price,
       stock: d.stock,
-      harvestedAt: new Date(d.harvestedAt),
+      freshAt: new Date(d.freshAt),
+      freshBasis,
+      cultivationMethod: d.cultivationMethod,
+      // Autofill dari profil produsen bila tidak dikirim — poster menjanjikan
+      // "ZERO MANUAL INPUT". Jangan pernah menyuruh petani mengetik koordinat.
+      harvestLat: d.harvestLat ?? producer.latitude,
+      harvestLng: d.harvestLng ?? producer.longitude,
       photoUrl: d.photoUrl,
       b2bPrice: d.b2bPrice,
       b2bMinQty: d.b2bMinQty,
