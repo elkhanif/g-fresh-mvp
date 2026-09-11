@@ -57,6 +57,16 @@ export function PinLokasi({
 
   const [pesan, setPesan] = useState('');
   const [siap, setSiap] = useState(false);
+  const [mencari, setMencari] = useState(false);
+
+  // Radius ketelitian dari perangkat, dalam meter. Disimpan supaya pembeli
+  // tahu titik hasil GPS itu layak dipakai atau cuma tebakan Wi-Fi: di dalam
+  // ruangan, `getCurrentPosition` sering berhasil tapi mengembalikan posisi
+  // menara/router dengan akurasi ratusan sampai ribuan meter. Tanpa angka ini,
+  // titik yang melenceng 800 m terlihat sama meyakinkannya dengan titik GPS
+  // yang tepat. Dikosongkan begitu penanda digeser tangan, karena angka
+  // ketelitian perangkat tidak lagi menggambarkan posisi penanda.
+  const [akurasi, setAkurasi] = useState<number | null>(null);
 
   useEffect(() => {
     let dibatalkan = false;
@@ -80,6 +90,7 @@ export function PinLokasi({
 
       peta.on('click', (e: any) => {
         onChangeRef.current({ lat: e.latlng.lat, lng: e.latlng.lng });
+        setAkurasi(null);
         setPesan('Titik dipindah. Geser penanda untuk menepatkan.');
       });
 
@@ -130,6 +141,7 @@ export function PinLokasi({
       markerRef.current.on('dragend', () => {
         const p = markerRef.current.getLatLng();
         onChangeRef.current({ lat: p.lat, lng: p.lng });
+        setAkurasi(null);
         setPesan('Titik diperbarui.');
       });
       // Penanda baru: geser tampilan supaya titiknya terlihat.
@@ -151,20 +163,56 @@ export function PinLokasi({
 
   function pakaiLokasiSaya() {
     if (!navigator.geolocation) {
-      setPesan('Perangkat ini tidak mendukung deteksi lokasi.');
+      setPesan('Browser ini tidak punya fitur deteksi lokasi. Ketuk peta untuk menaruh titik.');
       return;
     }
+
+    // 🔴 Geolocation API hanya hidup di secure context: HTTPS atau
+    // `localhost`. Dibuka lewat IP LAN (`http://192.168.x.x:3000`) — cara
+    // paling wajar menguji tampilan HP dari laptop — objek `navigator.geolocation`
+    // TETAP ADA, tapi `getCurrentPosition` gagal, dan di beberapa browser
+    // tanpa memanggil callback error sama sekali. Gejalanya persis seperti
+    // izin ditolak, jadi tanpa pemeriksaan ini waktu habis untuk mengutak-atik
+    // pengaturan izin padahal masalahnya alamat yang dipakai.
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      setPesan(
+        'Deteksi lokasi butuh HTTPS. Buka dari localhost atau alamat Vercel — lewat IP LAN tidak bisa. Sementara ini, ketuk peta untuk menaruh titik.',
+      );
+      return;
+    }
+
+    setMencari(true);
     setPesan('Mencari lokasi…');
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        setMencari(false);
+        const m = Math.round(pos.coords.accuracy);
+        setAkurasi(m);
         onChangeRef.current({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setPesan('Titik diambil dari perangkat Anda. Geser penanda bila kurang tepat.');
-      },
-      () =>
         setPesan(
-          'Gagal mengambil lokasi. Izinkan akses lokasi di browser, atau ketuk langsung peta untuk menaruh titik.',
-        ),
-      { enableHighAccuracy: true, timeout: 10_000 },
+          m > 100
+            ? `Titik terambil, tapi ketelitiannya rendah (±${m} m) — biasanya karena GPS mati atau posisi ditebak dari Wi-Fi. Geser penanda ke rumah Anda.`
+            : `Titik terambil dari perangkat (±${m} m). Geser penanda bila kurang tepat.`,
+        );
+      },
+      (err) => {
+        setMencari(false);
+        // Tiga sebab kegagalan butuh tiga tindakan berbeda. Satu pesan untuk
+        // semuanya mengarahkan pembeli ke pengaturan izin walau yang mati
+        // sebetulnya GPS-nya.
+        setPesan(
+          err.code === err.PERMISSION_DENIED
+            ? 'Izin lokasi ditolak. Aktifkan lewat ikon kunci di bilah alamat, lalu coba lagi — atau ketuk peta untuk menaruh titik.'
+            : err.code === err.TIMEOUT
+              ? 'Pencarian lokasi kelamaan. Pastikan GPS/Lokasi di HP aktif, atau ketuk peta untuk menaruh titik.'
+              : 'Perangkat belum bisa menentukan lokasi (GPS mati atau sinyal terhalang di dalam ruangan). Ketuk peta untuk menaruh titik.',
+        );
+      },
+      // `maximumAge: 0` menolak posisi lama dari cache browser: pembeli yang
+      // menekan tombol ini sedang berada di tempat pengiriman sekarang, bukan
+      // di tempat ia membuka peta terakhir kali. `timeout` dinaikkan ke 15 detik
+      // karena `enableHighAccuracy` di dalam ruangan sering butuh lebih dari 10.
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },
     );
   }
 
@@ -186,9 +234,9 @@ export function PinLokasi({
           variant="outline"
           className="px-3 py-1.5 text-xs"
           onClick={pakaiLokasiSaya}
-          disabled={!siap}
+          disabled={!siap || mencari}
         >
-          Pakai lokasi saya
+          {mencari ? 'Mencari…' : 'Pakai lokasi saya'}
         </Button>
         {value && (
           <Button
@@ -197,6 +245,7 @@ export function PinLokasi({
             className="px-3 py-1.5 text-xs"
             onClick={() => {
               onChange(null);
+              setAkurasi(null);
               setPesan('Titik dihapus.');
             }}
           >
@@ -206,6 +255,7 @@ export function PinLokasi({
         {value && (
           <span className="text-xs tabular-nums text-ink/50">
             {value.lat.toFixed(5)}, {value.lng.toFixed(5)}
+            {akurasi != null && ` · ±${akurasi} m`}
           </span>
         )}
       </div>

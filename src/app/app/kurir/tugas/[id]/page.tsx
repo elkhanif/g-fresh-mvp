@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/rbac';
 import { prisma } from '@/lib/db';
 import { rupiah, distanceKm } from '@/lib/utils';
 import { urlTitik } from '@/lib/maps';
+import { labelJendela } from '@/lib/slot';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
@@ -50,6 +51,14 @@ export default async function TugasDetail({ params }: { params: { id: string } }
         <div>
           <Link href="/app/kurir" className="text-sm text-leaf-700 hover:underline">← Kembali</Link>
           <h1 className="mt-1 text-xl font-semibold">Tugas #{o.id.slice(-6)}</h1>
+          {/* Jendela yang dijanjikan ke konsumen, ditaruh di kepala halaman —
+              bukan di kartu "titik antar" — karena ia berlaku untuk seluruh
+              tugas: jam jemput ke produsen ikut ditentukan olehnya. */}
+          {labelJendela(o.slot, o.slotDate) && (
+            <p className="mt-0.5 text-sm text-ink/60">
+              Jendela antar: <span className="font-medium text-ink/80">{labelJendela(o.slot, o.slotDate)}</span>
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <OrderStatusBadge status={o.status} />

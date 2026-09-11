@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -9,8 +9,29 @@ import { Input, Label } from '@/components/ui/Input';
 import { rupiah } from '@/lib/utils';
 import { useCart, unitPriceOf } from '@/lib/cart';
 import { PinLokasi, type Titik } from '@/components/PinLokasi';
+import { SlotPengiriman } from '@/components/forms/SlotPengiriman';
+import type { Jendela } from '@/lib/slot';
 
 const B2B_MIN_SUBTOTAL = 500_000;
+
+/**
+ * Bentuk balasan `POST /api/orders/quote`. Sengaja dituliskan di sini alih-alih
+ * diimpor dari route-nya: route adalah modul server, dan mengimpornya dari
+ * komponen klien akan menarik `prisma` ke bundel browser.
+ */
+type Perkiraan = {
+  subtotal: number;
+  ongkir: {
+    km: number | null;
+    dasar: number;
+    subsidiPersen: number;
+    subsidi: number;
+    ongkir: number;
+  };
+  platformFee: number;
+  total: number;
+  catatan: string[];
+};
 
 /**
  * Halaman checkout keranjang.
@@ -27,6 +48,7 @@ export function CartCheckout({
   billingAddress,
   b2bEligible,
   pinTerakhir,
+  jendela,
 }: {
   defaultAddress: string;
   billingAddress: string;
@@ -39,18 +61,93 @@ export function CartCheckout({
    * memesan berulang ke rumah yang sama tidak perlu menandai lagi.
    */
   pinTerakhir: Titik | null;
+  /**
+   * Jendela pengiriman yang masih bisa dipesan, dihitung di server saat
+   * halaman dirender (lihat lib/slot.ts). Diturunkan sebagai prop, bukan
+   * dihitung di browser: jam HP sering salah, sementara yang menolak pesanan
+   * saat submit adalah jam server.
+   */
+  jendela: Jendela[];
 }) {
   const router = useRouter();
   const { items, setQty, remove, clear, ready } = useCart();
   const [channel, setChannel] = useState<'B2C' | 'B2B'>('B2C');
   const [address, setAddress] = useState(defaultAddress);
   const [pin, setPin] = useState<Titik | null>(pinTerakhir);
+  // Jendela terdekat dipilih otomatis. Membiarkannya kosong berarti tombol
+  // bayar mati sampai pembeli menyadari ada pilihan yang belum disentuh,
+  // padahal "sesegera mungkin" hampir selalu yang dia mau.
+  const [slot, setSlot] = useState<string | null>(jendela[0]?.nilai ?? null);
+  const [perkiraan, setPerkiraan] = useState<Perkiraan | null>(null);
+  const [menghitung, setMenghitung] = useState(false);
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
   const subtotal = items.reduce((a, i) => a + unitPriceOf(i, channel) * i.qty, 0);
   const feeB2b = channel === 'B2B' ? Math.round((subtotal * 0.025) / 100) * 100 : 0;
   const kurangB2b = channel === 'B2B' && subtotal < B2B_MIN_SUBTOTAL;
+
+  // Kunci isi keranjang sebagai string: dipakai sebagai dependensi effect
+  // menggantikan `items`. Array `items` adalah objek baru setiap render, jadi
+  // memakainya langsung akan memicu permintaan perkiraan terus-menerus.
+  const kunciItem = items.map((i) => `${i.productId}:${i.qty}`).join(',');
+
+  // ONGKIR DIMINTA KE SERVER, BUKAN DIHITUNG DI SINI.
+  //
+  // Rumus ongkir (flat + per km, lalu dikurangi subsidi menurut tier produsen)
+  // hidup di lib/ongkir.ts dan dipakai juga oleh pembuat pesanan. Menyalinnya
+  // ke komponen ini akan membuat angka di layar pelan-pelan berbeda dari yang
+  // ditagih — dan tidak ada yang tahu kapan mulai berbeda. Jadi checkout
+  // MEMINTA angkanya lewat /api/orders/quote, yang tidak menulis apa pun.
+  //
+  // Ditunda 400 ms supaya menaikkan jumlah barang berkali-kali atau menggeser
+  // pin tidak mengirim satu permintaan per ketukan; permintaan yang keduluan
+  // dibatalkan lewat AbortController agar balasan lama tidak menimpa yang baru.
+  useEffect(() => {
+    if (!ready || items.length === 0) {
+      setPerkiraan(null);
+      return;
+    }
+    const batal = new AbortController();
+    setMenghitung(true);
+    const tunda = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/orders/quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: items.map((i) => ({ productId: i.productId, qty: i.qty })),
+            destLat: pin?.lat,
+            destLng: pin?.lng,
+            channel,
+          }),
+          signal: batal.signal,
+        });
+        if (!res.ok) throw new Error('gagal');
+        setPerkiraan(await res.json());
+      } catch {
+        // Jaringan mati atau permintaan dibatalkan: perkiraan lama dibiarkan
+        // apa adanya dan tombol bayar tetap hidup. Server tetap menghitung
+        // ulang saat pesanan dibuat, jadi gagal memuat perkiraan tidak boleh
+        // memblokir checkout.
+      } finally {
+        if (!batal.signal.aborted) setMenghitung(false);
+      }
+    }, 400);
+
+    return () => {
+      clearTimeout(tunda);
+      batal.abort();
+    };
+    // `items` diwakili `kunciItem` — lihat komentar di atas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kunciItem, pin?.lat, pin?.lng, channel, ready]);
+
+  const ongkir = perkiraan?.ongkir ?? null;
+  const totalTampil = perkiraan ? perkiraan.total : subtotal + feeB2b;
+  // Harga bisa berubah di antara saat barang dimasukkan keranjang dan saat
+  // checkout dibuka. Keranjang menyimpan harga lama; server memakai yang baru.
+  const hargaBergeser = perkiraan != null && perkiraan.subtotal !== subtotal;
 
   // Dikelompokkan per penjual supaya pembeli paham barangnya datang dari
   // beberapa kios/petani, bukan satu gudang.
@@ -82,6 +179,10 @@ export function CartCheckout({
         destLat: pin?.lat,
         destLng: pin?.lng,
         channel,
+        // Dikirim sebagai "2026-09-12|SORE". Server memecah dan MEMERIKSA
+        // ULANG apakah jendelanya masih terbuka — halaman keranjang bisa
+        // terbuka berjam-jam, dan batas pesan rit sore jatuh pukul 13.30.
+        slot: slot ?? undefined,
       }),
     });
     const order = await res.json().catch(() => ({}));
@@ -211,20 +312,69 @@ export function CartCheckout({
             </div>
           )}
 
-          <div className="flex justify-between text-sm">
-            <span className="text-ink/60">Subtotal ({items.length} produk)</span>
-            <b>{rupiah(subtotal)}</b>
-          </div>
-          {channel === 'B2B' && (
-            <div className="flex justify-between text-sm">
-              <span className="text-ink/60">Biaya layanan (2,5%)</span>
-              <b>{rupiah(feeB2b)}</b>
+          {/* RINCIAN BIAYA, BUKAN JANJI AKAN DIHITUNG NANTI.
+              Sebelumnya blok ini cuma menampilkan subtotal lalu satu kalimat
+              "ongkir dihitung server saat pesanan dibuat" — jadi konsumen baru
+              melihat ongkirnya di halaman pembayaran, ketika pesanan dan
+              reservasi stok sudah terbentuk. Angka di bawah datang dari
+              /api/orders/quote yang memakai fungsi yang sama dengan pembuat
+              pesanan, jadi ini bukan tafsiran ulang rumus di sisi klien. */}
+          <div className="space-y-1.5 text-sm">
+            <div className="flex justify-between gap-3">
+              <span className="text-ink/60">Subtotal ({items.length} produk)</span>
+              <span className="tabular-nums">{rupiah(perkiraan?.subtotal ?? subtotal)}</span>
             </div>
+
+            <div className="flex justify-between gap-3">
+              <span className="text-ink/60">
+                Ongkir
+                {ongkir?.km != null && (
+                  <span className="text-ink/45"> · ± {ongkir.km.toFixed(1)} km</span>
+                )}
+              </span>
+              <span className="tabular-nums">
+                {ongkir ? rupiah(ongkir.dasar) : menghitung ? 'menghitung…' : '—'}
+              </span>
+            </div>
+
+            {ongkir != null && ongkir.subsidi > 0 && (
+              <div className="flex justify-between gap-3">
+                <span className="text-ink/60">Subsidi ongkir ({ongkir.subsidiPersen}%)</span>
+                <span className="tabular-nums text-leaf-700">− {rupiah(ongkir.subsidi)}</span>
+              </div>
+            )}
+
+            {channel === 'B2B' && (
+              <div className="flex justify-between gap-3">
+                <span className="text-ink/60">Biaya layanan (2,5%)</span>
+                <span className="tabular-nums">{rupiah(perkiraan?.platformFee ?? feeB2b)}</span>
+              </div>
+            )}
+
+            <div className="flex justify-between gap-3 border-t border-leaf-100 pt-1.5 font-semibold">
+              <span>Total</span>
+              <span className="tabular-nums">
+                {rupiah(totalTampil)}
+                {menghitung && !perkiraan && <span className="font-normal text-ink/40"> …</span>}
+              </span>
+            </div>
+          </div>
+
+          {hargaBergeser && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+              Harga sebagian barang berubah sejak dimasukkan ke keranjang. Yang berlaku adalah
+              angka di rincian ini.
+            </p>
           )}
-          <p className="text-xs text-ink/50">
-            Ongkir dan subsidi dihitung server saat pesanan dibuat, berdasarkan jarak dan reputasi
-            produsen.
-          </p>
+
+          {perkiraan?.catatan.map((c) => (
+            <p
+              key={c}
+              className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800"
+            >
+              {c}
+            </p>
+          ))}
 
           {kurangB2b && (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -257,12 +407,16 @@ export function CartCheckout({
             </p>
           )}
 
+          <SlotPengiriman jendela={jendela} value={slot} onChange={setSlot} />
+
           {msg && <p className="text-sm text-red-600">{msg}</p>}
 
           <Button
             variant="cta"
             className="w-full"
-            disabled={loading || kurangB2b || !address.trim()}
+            disabled={
+              loading || kurangB2b || !address.trim() || (jendela.length > 0 && !slot)
+            }
             onClick={checkout}
           >
             {loading

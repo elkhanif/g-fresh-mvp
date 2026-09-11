@@ -1,6 +1,7 @@
 import { requireRole, getSessionUser } from '@/lib/rbac';
 import { prisma } from '@/lib/db';
 import { CartCheckout } from '@/components/forms/CartCheckout';
+import { jendelaTersedia } from '@/lib/slot';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +45,12 @@ export default async function KeranjangPage() {
   // admin — sama seperti aturan di halaman detail produk sebelumnya.
   const b2bEligible = !!account?.business?.verified;
 
+  // Jendela pengiriman dihitung DI SINI, bukan di komponen klien. Halaman ini
+  // `force-dynamic`, jadi daftarnya selalu segar saat dibuka — dan jamnya
+  // adalah jam server, yaitu jam yang sama yang akan menolak pesanan bila
+  // slotnya sudah tutup. Jam HP tidak dipercaya untuk keputusan ini.
+  const jendela = jendelaTersedia();
+
   return (
     <div className="space-y-4">
       <div>
@@ -58,6 +65,7 @@ export default async function KeranjangPage() {
         billingAddress={account?.business?.billingAddress ?? ''}
         b2bEligible={b2bEligible}
         pinTerakhir={pinTerakhir}
+        jendela={jendela}
       />
     </div>
   );

@@ -3,7 +3,9 @@ import { prisma } from '@/lib/db';
 import { qrDataUrl } from '@/lib/qr';
 import { rupiah } from '@/lib/utils';
 import { Card } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
+import { labelJendela } from '@/lib/slot';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,7 +65,17 @@ export default async function ProdusenPesanan() {
                 <p className="font-medium">Pesanan #{o.id.slice(-6)}</p>
                 <p className="text-sm text-ink/60">Pembeli: {o.consumer.name}</p>
               </div>
-              <OrderStatusBadge status={o.status} />
+              {/* Jendela antar ada di halaman ini karena produsenlah yang
+                  paling butuh: barang harus sudah dikemas dan QR tertempel
+                  sebelum kurir datang menjemput, dan jam jemput mengikuti
+                  rit ini. Sebelumnya satu-satunya petunjuk waktu di halaman
+                  ini adalah urutan daftar. */}
+              <div className="flex flex-col items-end gap-1.5">
+                <OrderStatusBadge status={o.status} />
+                {labelJendela(o.slot, o.slotDate) && (
+                  <Badge tone="amber">{labelJendela(o.slot, o.slotDate)}</Badge>
+                )}
+              </div>
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {o.items

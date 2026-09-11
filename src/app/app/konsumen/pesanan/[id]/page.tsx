@@ -5,6 +5,7 @@ import { rupiah } from '@/lib/utils';
 import { Card } from '@/components/ui/Card';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
 import { OrderActions } from '@/components/forms/OrderActions';
+import { labelJendela } from '@/lib/slot';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,6 +68,12 @@ export default async function OrderDetail({ params }: { params: { id: string } }
           <div className="border-t border-leaf-100 pt-2 text-sm">
             <div className="flex justify-between"><span className="text-ink/60">Subtotal</span><span>{rupiah(o.subtotal)}</span></div>
             <div className="flex justify-between"><span className="text-ink/60">Ongkir</span><span>{rupiah(o.deliveryFee)}</span></div>
+            {/* Biaya layanan B2B dipungut dan ikut masuk `total`, tapi tidak
+                pernah ditampilkan di rincian ini — jadi jumlah baris di atas
+                tidak sama dengan totalnya dan terlihat seperti salah hitung. */}
+            {o.platformFee > 0 && (
+              <div className="flex justify-between"><span className="text-ink/60">Biaya layanan</span><span>{rupiah(o.platformFee)}</span></div>
+            )}
             <div className="mt-1 flex justify-between font-semibold"><span>Total</span><span>{rupiah(o.total)}</span></div>
           </div>
         </Card>
@@ -74,6 +81,15 @@ export default async function OrderDetail({ params }: { params: { id: string } }
         <Card className="mt-4">
           <p className="text-sm text-ink/60">Kirim ke</p>
           <p className="font-medium">{o.addressText}</p>
+          {/* Pesanan yang dibuat sebelum fitur jendela ada tidak punya nilai
+              ini, dan tidak diberi kalimat pengganti: mengarang "jendela tidak
+              dipilih" untuk pesanan lama akan terbaca seperti kelalaian
+              pembeli. */}
+          {labelJendela(o.slot, o.slotDate) && (
+            <p className="mt-2 text-sm text-ink/60">
+              Jendela antar: <span className="font-medium text-ink/80">{labelJendela(o.slot, o.slotDate)}</span>
+            </p>
+          )}
           {o.courier && (
             <p className="mt-2 text-sm text-ink/60">Kurir: {o.courier.user.name} · {o.courier.user.phone}</p>
           )}

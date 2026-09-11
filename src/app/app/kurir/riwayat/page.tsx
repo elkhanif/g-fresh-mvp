@@ -2,6 +2,7 @@ import { requireRole } from '@/lib/rbac';
 import { prisma } from '@/lib/db';
 import { rupiah } from '@/lib/utils';
 import { Card } from '@/components/ui/Card';
+import { Stat, StatRow } from '@/components/ui/Stat';
 import { OrderStatusBadge } from '@/components/OrderStatusBadge';
 
 export const dynamic = 'force-dynamic';
@@ -29,6 +30,30 @@ export default async function KurirRiwayat() {
       </Card>
     );
   }
+
+  // PENGHASILAN SEUMUR AKUN, DIAMBIL DARI BUKU BESAR DOMPET.
+  //
+  // Bukan dari menjumlahkan `deliveryFee` pada daftar di bawah: daftar itu
+  // `take: 100`, jadi begitu kurir melewati 100 pengiriman, totalnya akan
+  // diam-diam mengecil — jenis kesalahan yang tidak pernah melempar error dan
+  // tidak pernah kelihatan sampai ada yang menghitung manual.
+  //
+  // Yang dijumlahkan hanya baris `ONGKIR`, yaitu upah yang BENAR-BENAR
+  // dikreditkan saat pesanan selesai (lihat kreditOngkir di lib/wallet.ts).
+  // Angka ini sengaja TIDAK dikurangi angsuran coolbox dan penarikan — itu
+  // saldo, bukan penghasilan. Dua pertanyaan berbeda: "sudah dapat berapa
+  // dari narik" dan "sekarang ada berapa di dompet".
+  const [upah, selesaiTotal] = await Promise.all([
+    prisma.walletTx.aggregate({
+      where: { courierId: courier.id, kind: 'ONGKIR' },
+      _sum: { amount: true },
+      _count: true,
+    }),
+    prisma.order.count({ where: { courierId: courier.id, status: 'SELESAI' } }),
+  ]);
+  const totalPenghasilan = upah._sum.amount ?? 0;
+  const antaranDibayar = upah._count;
+  const rataRata = antaranDibayar > 0 ? Math.round(totalPenghasilan / antaranDibayar) : 0;
 
   const orders = await prisma.order.findMany({
     where: { courierId: courier.id, status: { in: ['SELESAI', 'REFUND', 'SENGKETA'] } },
@@ -60,9 +85,31 @@ export default async function KurirRiwayat() {
         <p className="text-sm text-ink/60">Rekap tugas yang sudah tuntas beserta pendapatan ongkir.</p>
       </div>
 
+      <StatRow>
+        <Stat
+          label="Total penghasilan"
+          value={rupiah(totalPenghasilan)}
+          hint="seluruh antaran, sebelum angsuran & penarikan"
+        />
+        <Stat
+          label="Antaran dibayar"
+          value={antaranDibayar}
+          hint={
+            selesaiTotal !== antaranDibayar
+              ? `${selesaiTotal} pesanan selesai tercatat`
+              : 'pesanan selesai'
+          }
+        />
+        <Stat label="Rata-rata per antaran" value={rupiah(rataRata)} />
+      </StatRow>
+
       {hari.length > 0 && (
         <section>
           <h2 className="mb-3 text-lg font-semibold">Rekap harian</h2>
+          <p className="-mt-2 mb-3 text-xs text-ink/50">
+            Dari 100 pengiriman terakhir, 14 hari terbaru. Total penghasilan di atas dihitung dari
+            seluruh riwayat, jadi jumlah baris di tabel ini bisa lebih kecil.
+          </p>
           <Card className="overflow-hidden p-0">
             <table className="w-full text-sm">
               <thead className="bg-leaf-50 text-left text-ink/70">

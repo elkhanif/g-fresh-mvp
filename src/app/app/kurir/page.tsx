@@ -13,6 +13,7 @@ import { OrderStatusBadge } from '@/components/OrderStatusBadge';
 import { PerfBadge } from '@/components/PerfBadge';
 import { KurirAccept, KurirAdvance, AvailabilityToggle } from '@/components/forms/KurirActions';
 import { urlNavigasi } from '@/lib/maps';
+import { labelJendela } from '@/lib/slot';
 import { saldoKurir } from '@/lib/wallet';
 import { prisma as db } from '@/lib/db';
 
@@ -66,7 +67,21 @@ export default async function KurirDashboard() {
     prisma.order.findMany({
       where: { status: 'DIBAYAR', courierId: null },
       include: { items: { include: { product: { include: { producer: true } } } } },
-      orderBy: { createdAt: 'asc' },
+      // Diurutkan menurut RIT, bukan waktu pesan. Pesanan yang dijanjikan
+      // 15.00–18.00 hari ini lebih mendesak daripada pesanan yang masuk lebih
+      // dulu tapi dijanjikan besok pagi. Enum DeliverySlot dideklarasikan
+      // urut jam, dan Postgres mengurutkan enum menurut urutan deklarasi,
+      // jadi 'asc' sudah berarti pagi → siang → sore.
+      //
+      // `nulls: 'last'` untuk pesanan lama yang dibuat sebelum ada jendela:
+      // tanpa itu Postgres menaruh NULL paling akhir pada ASC (kebetulan
+      // benar), tapi menuliskannya membuat urutan tidak bergantung pada
+      // kebetulan.
+      orderBy: [
+        { slotDate: { sort: 'asc', nulls: 'last' } },
+        { slot: { sort: 'asc', nulls: 'last' } },
+        { createdAt: 'asc' },
+      ],
       take: 30,
     }),
     prisma.order.findMany({
@@ -185,6 +200,9 @@ export default async function KurirDashboard() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold tabular-nums">#{o.id.slice(-6)}</span>
                     <OrderStatusBadge status={o.status} />
+                    {labelJendela(o.slot, o.slotDate) && (
+                      <Badge tone="amber">{labelJendela(o.slot, o.slotDate)}</Badge>
+                    )}
                   </div>
 
                   <ol className="mt-3 space-y-2">
@@ -371,6 +389,15 @@ export default async function KurirDashboard() {
                   <div className="min-w-[240px] flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium tabular-nums">#{o.id.slice(-6)}</span>
+                      {/* Rit yang dijanjikan ke konsumen. Ditaruh sebagai badge
+                          pertama setelah nomor karena inilah yang menentukan
+                          kurir mau ambil tugas ini atau tidak — bukan besar
+                          ongkirnya. Pesanan lama tanpa jendela tidak diberi
+                          badge apa pun; menuliskan "tanpa jendela" cuma
+                          menambah kata tanpa menambah keputusan. */}
+                      {labelJendela(o.slot, o.slotDate) && (
+                        <Badge tone="amber">{labelJendela(o.slot, o.slotDate)}</Badge>
+                      )}
                       <Badge tone="blue">Ongkir {rupiah(o.deliveryFee)}</Badge>
                       {jarak != null && <Badge tone="neutral">± {jarak.toFixed(1)} km</Badge>}
                       <Badge tone="neutral">{o.items.length} item</Badge>
