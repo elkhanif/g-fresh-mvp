@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { apiUser } from '@/lib/rbac';
 import { makeTraceCode } from '@/lib/qr';
-import { distanceKm, estimateDeliveryFee } from '@/lib/utils';
-import { isSuspended, deliverySubsidyFactor } from '@/lib/rating';
+import { isSuspended } from '@/lib/rating';
+import { acuanOngkir, hitungOngkir, type BarisAcuan } from '@/lib/ongkir';
+import { pecahNilai, slotMasihBuka, tanggalKeKolom, labelJam } from '@/lib/slot';
 import {
   platformFeeOf, dueDateFrom, unitPriceFor, nextInvoiceNumber, B2B_MIN_SUBTOTAL,
 } from '@/lib/b2b';
@@ -49,6 +50,14 @@ const createSchema = z.object({
   destLat: z.number().optional(),
   destLng: z.number().optional(),
   channel: z.enum(['B2C', 'B2B']).default('B2C'),
+  // Jendela pengiriman, dalam bentuk "2026-09-12|PAGI".
+  //
+  // Opsional, bukan wajib: pesanan tanpa jendela tetap sah supaya klien lama
+  // (dan pengujian lewat curl) tidak pecah. Tapi begitu dikirim, nilainya
+  // DIPERIKSA ULANG di sini — bukan dipercaya dari klien. Halaman keranjang
+  // bisa terbuka berjam-jam; slot yang tampak terbuka saat halaman dimuat
+  // mungkin sudah tutup saat tombol ditekan.
+  slot: z.string().optional(),
 });
 
 // POST /api/orders — konsumen membuat order (status MENUNGGU_BAYAR).
@@ -62,6 +71,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Data tidak valid', detail: parsed.error.flatten() }, { status: 400 });
   }
   const d = parsed.data;
+
+  // Jendela pengiriman diverifikasi SEBELUM transaksi dibuka: menolak lebih
+  // awal berarti tidak ada stok yang sempat direservasi lalu dibatalkan.
+  let jendela: { tanggal: string; kode: 'PAGI' | 'SIANG' | 'SORE' } | null = null;
+  if (d.slot) {
+    jendela = pecahNilai(d.slot);
+    if (!jendela) {
+      return NextResponse.json({ error: 'Jendela pengiriman tidak dikenali.' }, { status: 400 });
+    }
+    if (!slotMasihBuka(jendela.kode, jendela.tanggal)) {
+      return NextResponse.json(
+        {
+          error:
+            `Jendela ${labelJam(jendela.kode)} sudah tutup. ` +
+            'Muat ulang halaman keranjang lalu pilih jendela berikutnya.',
+        },
+        { status: 409 },
+      );
+    }
+  }
 
   // Kanal B2B hanya untuk akun dengan profil bisnis terverifikasi.
   if (d.channel === 'B2B') {
@@ -84,9 +113,11 @@ export async function POST(req: Request) {
     const order = await prisma.$transaction(async (tx) => {
       const itemRows = [];
       const movementIds: string[] = []; // mutasi stok yang perlu ditandai orderId
+      // Baris acuan ongkir, dalam urutan keranjang. Aturan "produsen mana yang
+      // dipakai" tinggal di acuanOngkir() supaya endpoint perkiraan memilih
+      // acuan yang sama persis.
+      const barisAcuan: BarisAcuan[] = [];
       let subtotal = 0;
-      let firstProducerCoords: { lat: number; lng: number } | null = null;
-      let firstProducerRating = 5;
 
       for (const it of d.items) {
         const p = await tx.product.findUnique({
@@ -126,10 +157,11 @@ export async function POST(req: Request) {
         const { unitPrice } = unitPriceFor(p, d.channel, it.qty);
         const lineTotal = unitPrice * it.qty;
         subtotal += lineTotal;
-        if (!firstProducerCoords && p.producer.latitude && p.producer.longitude) {
-          firstProducerCoords = { lat: p.producer.latitude, lng: p.producer.longitude };
-        }
-        if (itemRows.length === 0) firstProducerRating = p.producer.ratingScore;
+        barisAcuan.push({
+          lat: p.producer.latitude,
+          lng: p.producer.longitude,
+          rating: p.producer.ratingScore,
+        });
 
         itemRows.push({
           productId: p.id,
@@ -164,16 +196,14 @@ export async function POST(req: Request) {
       }
 
       // Ongkir hyperlocal: jarak produsen → tujuan bila koordinat lengkap.
-      let baseFee = estimateDeliveryFee(3); // default ~3 km
-      if (firstProducerCoords && d.destLat != null && d.destLng != null) {
-        const km = distanceKm(firstProducerCoords, { lat: d.destLat, lng: d.destLng });
-        baseFee = estimateDeliveryFee(km);
-      }
-      // #1: subsidi ongkir hanya untuk B2C — kanal B2B justru yang mendanainya.
-      const deliveryFee =
-        d.channel === 'B2C'
-          ? Math.round((baseFee * deliverySubsidyFactor(firstProducerRating)) / 500) * 500
-          : baseFee;
+      // Rumusnya ada di lib/ongkir.ts dan dipakai bersama oleh endpoint
+      // perkiraan, jadi angka di checkout tidak bisa berbeda dari yang ditagih.
+      const rincian = hitungOngkir({
+        acuan: acuanOngkir(barisAcuan),
+        tujuan: d.destLat != null && d.destLng != null ? { lat: d.destLat, lng: d.destLng } : null,
+        channel: d.channel,
+      });
+      const deliveryFee = rincian.ongkir;
 
       // #8: platform fee (2,5%) hanya dipungut pada kanal B2B.
       const platformFee = d.channel === 'B2B' ? platformFeeOf(subtotal) : 0;
@@ -190,6 +220,8 @@ export async function POST(req: Request) {
           addressText: d.addressText,
           destLat: d.destLat,
           destLng: d.destLng,
+          slot: jendela?.kode ?? null,
+          slotDate: jendela ? tanggalKeKolom(jendela.tanggal) : null,
           items: { create: itemRows },
           events: { create: { status: 'MENUNGGU_BAYAR', note: 'Order dibuat.', actorId: user.id } },
         },

@@ -497,6 +497,22 @@ model Order {
   destLat        Float?
   destLng        Float?
 
+  // Jendela pengiriman yang dipilih konsumen (tiga rit per hari).
+  //
+  // Dua kolom, bukan satu: "PAGI" sendirian tidak menjawab pagi hari apa —
+  // rit pagi tutup pukul 21.00 H-1, jadi sepanjang hari pilihan "pagi" selalu
+  // merujuk besok. Jamnya sendiri tidak disimpan, melainkan dibaca dari tabel
+  // SLOT di src/lib/slot.ts.
+  //
+  // Keduanya opsional karena pesanan yang dibuat sebelum fitur ini ada tidak
+  // punya jendela, dan memaksa nilai bawaan berarti mengarang janji antar
+  // untuk pesanan yang sudah lewat.
+  slot           DeliverySlot?
+  // @db.Date — yang disimpan tanggal KALENDER WIB, bukan titik waktu. Dibentuk
+  // dan dibaca lewat tanggalKeKolom/kolomKeTanggal di src/lib/slot.ts supaya
+  // tidak ada satu pun tempat yang mengonversinya dengan zona waktu server.
+  slotDate       DateTime?    @db.Date
+
   items          OrderItem[]
   complaint      Complaint?
   invoice        Invoice?
@@ -507,11 +523,22 @@ model Order {
   @@index([status])
   @@index([consumerId])
   @@index([courierId])
+  // Kurir dan produsen membaca pesanan per rit ("apa yang jalan sore ini").
+  @@index([slotDate, slot])
 }
 
 enum Channel {
   B2C
   B2B
+}
+
+/// Rit pengiriman harian. Urutan deklarasi = urutan jam, dan Postgres
+/// mengurutkan enum menurut urutan deklarasinya — jadi `orderBy: { slot: 'asc' }`
+/// menghasilkan pagi → siang → sore tanpa tabel bantu.
+enum DeliverySlot {
+  PAGI // 06.00–08.00
+  SIANG // 10.00–13.00
+  SORE // 15.00–18.00
 }
 
 model OrderItem {
