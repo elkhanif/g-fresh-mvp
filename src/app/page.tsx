@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { rupiah } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
+import { Logo } from '@/components/ui/Logo';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,7 @@ export default async function Landing() {
   return (
     <main className="mx-auto max-w-5xl px-5">
       <header className="flex items-center justify-between py-5">
-        <span className="text-lg font-bold text-leaf-700">G-Fresh</span>
+        <Logo className="h-8" />
         <nav className="flex gap-2">
           <Link href="/login">
             <Button variant="ghost">Masuk</Button>

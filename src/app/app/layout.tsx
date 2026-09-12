@@ -7,6 +7,7 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { CartProvider } from '@/lib/cart';
 import { CartLink } from '@/components/CartLink';
 import { BottomNav } from '@/components/BottomNav';
+import { Logo } from '@/components/ui/Logo';
 import { NAV, NAV_BISNIS } from '@/lib/nav';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -35,8 +36,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <div className="mx-auto flex h-12 max-w-5xl items-center justify-between gap-4 px-5">
               <div className="flex items-center gap-6">
                 <Link href="/app" className="flex items-center" aria-label="G-Fresh">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/logo.svg" alt="G-Fresh" className="h-7 w-auto" />
+                  <Logo className="h-7" alt="" />
                 </Link>
                 <nav className="hidden gap-4 sm:flex">
                   {navHeader.map((n) => (

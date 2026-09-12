@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Input, Label, Select } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
+import { Logo } from '@/components/ui/Logo';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -53,7 +54,9 @@ export default function RegisterPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-5 py-8">
-      <Link href="/" className="mb-6 text-lg font-bold text-leaf-700">G-Fresh</Link>
+      <Link href="/" className="mb-6 inline-flex">
+        <Logo className="h-8" />
+      </Link>
       <Card>
         <h1 className="text-xl font-semibold">Buat akun</h1>
         <form onSubmit={submit} className="mt-4 space-y-3">
