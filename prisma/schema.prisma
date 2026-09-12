@@ -497,7 +497,7 @@ model Order {
   destLat        Float?
   destLng        Float?
 
-  // Jendela pengiriman yang dipilih konsumen (tiga rit per hari).
+  // Jendela pengiriman yang dipilih konsumen (empat rit per hari).
   //
   // Dua kolom, bukan satu: "PAGI" sendirian tidak menjawab pagi hari apa —
   // rit pagi tutup pukul 21.00 H-1, jadi sepanjang hari pilihan "pagi" selalu
@@ -534,11 +534,17 @@ enum Channel {
 
 /// Rit pengiriman harian. Urutan deklarasi = urutan jam, dan Postgres
 /// mengurutkan enum menurut urutan deklarasinya — jadi `orderBy: { slot: 'asc' }`
-/// menghasilkan pagi → siang → sore tanpa tabel bantu.
+/// menghasilkan pagi → siang → sore → malam tanpa tabel bantu.
+///
+/// 🔴 NILAI BARU SELALU DITAMBAHKAN SESUAI URUTAN JAM, dan untuk rit yang lebih
+/// malam itu berarti PALING BAWAH. Menaruhnya di tengah atau urut abjad akan
+/// membuat antrean kurir (/app/kurir) salah urut tanpa error apa pun —
+/// tidak ada typecheck yang bisa menangkapnya.
 enum DeliverySlot {
   PAGI // 06.00–08.00
   SIANG // 10.00–13.00
   SORE // 15.00–18.00
+  MALAM // 18.30–21.00
 }
 
 model OrderItem {

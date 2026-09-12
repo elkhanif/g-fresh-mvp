@@ -1,5 +1,5 @@
 'use client';
-import { labelTutup, type Jendela } from '@/lib/slot';
+import { SLOT, labelJam, labelTutup, type Jendela } from '@/lib/slot';
 
 /**
  * Pemilih jendela pengiriman.
@@ -72,9 +72,14 @@ export function SlotPengiriman({
           );
         })}
       </div>
+      {/* Kalimat ini DIBANGKITKAN dari tabel SLOT, tidak diketik ulang. Versi
+          sebelumnya menyebut "tiga kali sehari" beserta ketiga jamnya sebagai
+          teks biasa — begitu rit keempat ditambahkan, kalimat itu jadi bohong
+          di layar sementara pilihan di atasnya sudah benar. Jenis salah yang
+          tidak bisa ditangkap typecheck maupun pengujian. */}
       <p className="mt-1 text-xs leading-relaxed text-ink/50">
-        Pengiriman jalan tiga kali sehari: 06.00–08.00, 10.00–13.00, 15.00–18.00. Rit yang sudah
-        lewat batas pesan tidak ditampilkan.
+        Pengiriman jalan {SLOT.length} kali sehari: {SLOT.map((s) => labelJam(s.kode)).join(', ')}.
+        Rit yang sudah lewat batas pesan tidak ditampilkan.
       </p>
     </fieldset>
   );

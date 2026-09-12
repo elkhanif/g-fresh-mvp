@@ -5,7 +5,7 @@ import { apiUser } from '@/lib/rbac';
 import { makeTraceCode } from '@/lib/qr';
 import { isSuspended } from '@/lib/rating';
 import { acuanOngkir, hitungOngkir, type BarisAcuan } from '@/lib/ongkir';
-import { pecahNilai, slotMasihBuka, tanggalKeKolom, labelJam } from '@/lib/slot';
+import { pecahNilai, slotMasihBuka, tanggalKeKolom, labelJam, type KodeSlot } from '@/lib/slot';
 import {
   platformFeeOf, dueDateFrom, unitPriceFor, nextInvoiceNumber, B2B_MIN_SUBTOTAL,
 } from '@/lib/b2b';
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
 
   // Jendela pengiriman diverifikasi SEBELUM transaksi dibuka: menolak lebih
   // awal berarti tidak ada stok yang sempat direservasi lalu dibatalkan.
-  let jendela: { tanggal: string; kode: 'PAGI' | 'SIANG' | 'SORE' } | null = null;
+  let jendela: { tanggal: string; kode: KodeSlot } | null = null;
   if (d.slot) {
     jendela = pecahNilai(d.slot);
     if (!jendela) {

@@ -1,9 +1,9 @@
 /**
- * Jendela pengiriman (tiga rit per hari).
+ * Jendela pengiriman (empat rit per hari).
  *
  * Barang segar tidak diantar satu-satu begitu pesanan masuk — kurir
  * mengumpulkan beberapa pesanan lalu jalan sekali per rit. Jadwalnya:
- * pagi 06.00–08.00, siang 10.00–13.00, sore 15.00–18.00.
+ * pagi 06.00–08.00, siang 10.00–13.00, sore 15.00–18.00, malam 18.30–21.00.
  *
  * TIGA HAL YANG MEMBUAT BERKAS INI ADA, dan bukan sekadar array jam:
  *
@@ -35,7 +35,7 @@
  *    keduanya disimpan di `Order`.
  */
 
-export type KodeSlot = 'PAGI' | 'SIANG' | 'SORE';
+export type KodeSlot = 'PAGI' | 'SIANG' | 'SORE' | 'MALAM';
 
 type DefinisiSlot = {
   kode: KodeSlot;
@@ -62,6 +62,14 @@ export const SLOT: DefinisiSlot[] = [
   { kode: 'PAGI', mulaiMenit: JAM(6), selesaiMenit: JAM(8), tutup: { hariSebelum: true, menit: JAM(21) } },
   { kode: 'SIANG', mulaiMenit: JAM(10), selesaiMenit: JAM(13), tutup: { hariSebelum: false, menit: JAM(8, 30) } },
   { kode: 'SORE', mulaiMenit: JAM(15), selesaiMenit: JAM(18), tutup: { hariSebelum: false, menit: JAM(13, 30) } },
+  // Rit malam ada untuk yang masak makan malam. Sebelum rit ini, orang yang
+  // pukul 14.00 baru sadar butuh bahan tidak punya pilihan apa pun untuk hari
+  // itu — rit sore sudah tutup 13.30, dan yang tersisa besok pagi.
+  //
+  // Cutoff 16.30, bukan sekitar jam berangkat: yang membuat rit ini berguna
+  // justru celah 13.30–16.30 itu. Menggesernya lebih awal mengembalikan
+  // masalah yang sama, hanya bergeser dua jam.
+  { kode: 'MALAM', mulaiMenit: JAM(18, 30), selesaiMenit: JAM(21), tutup: { hariSebelum: false, menit: JAM(16, 30) } },
 ];
 
 const SEHARI = 24 * 60;

@@ -183,8 +183,14 @@ Halaman keranjang sudah `force-dynamic`, jadi daftarnya selalu segar.
 | Pagi | 06.00–08.00 | **21.00 H-1** |
 | Siang | 10.00–13.00 | 08.30 hari itu |
 | Sore | 15.00–18.00 | 13.30 hari itu |
+| Malam | 18.30–21.00 | 16.30 hari itu |
 
 Kurir harus menjemput ke produsen dulu, jadi jaraknya tidak seragam.
+
+Rit malam ditambahkan setelah v28 karena konsumen yang masak makan malam tidak
+terjangkau sama sekali: setelah 13.30 pilihan terdekat melompat ke besok pagi.
+Cutoff 16.30 dipilih justru untuk menutup celah 13.30–16.30 itu — memajukannya
+mengembalikan masalah yang sama, hanya bergeser dua jam.
 
 🔴 Akibat yang perlu disadari: **sepanjang hari, pilihan "pagi" selalu pagi
 besok.** Rit pagi memang barang pre-order — panennya subuh.
